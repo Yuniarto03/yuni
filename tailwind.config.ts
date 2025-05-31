@@ -10,8 +10,8 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'],
+        body: ['Rajdhani', 'sans-serif'],
+        headline: ['Orbitron', 'sans-serif'],
         code: ['monospace'],
       },
       colors: {
@@ -64,6 +64,10 @@ export default {
           'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
+        },
+        magentaAccent: { // Added magenta accent
+          DEFAULT: 'hsl(var(--magenta-accent))',
+          foreground: 'hsl(var(--magenta-accent-foreground))',
         },
       },
       borderRadius: {
