@@ -265,10 +265,10 @@ export function DataVisualization({ uploadedData, dataFields, datasetIdentifier 
             <BarChart3 className="text-primary" />
             Visualize Your Data
           </CardTitle>
-          <CardDescription>Create various charts. Upload data (CSV, XLS, or XLSX) to enable. CSV recommended for best results.</CardDescription>
+          <CardDescription>Create various charts. Upload data (CSV, XLS, or XLSX) to enable. For Excel files, ensure the correct sheet is selected.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a CSV, XLS, or XLSX file in the 'Upload Data' section to use this feature. CSV is recommended for best results.</p>
+          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a CSV, XLS, or XLSX file in the 'Upload Data' section. Select the appropriate sheet in Excel files for visualization.</p>
         </CardContent>
       </Card>
     );

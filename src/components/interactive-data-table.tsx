@@ -99,7 +99,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
         </CardTitle>
         <CardDescription>
           {fileName ? `Displaying data from: ${currentDatasetIdentifier}. ` : "Upload a file (CSV, XLS, XLSX) to see your data. "}
-          CSV format is recommended for best parsing results with the current system. For Excel, ensure the correct sheet is selected.
+          For Excel files, ensure the correct sheet is selected for accurate table display.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -145,7 +145,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
               </div>
             </div>
 
-            <div className="h-[60vh] overflow-auto rounded-md border">
+            <div className="h-[60vh] overflow-y-auto rounded-md border">
               <Table>
                 <TableCaption>A view of {currentDatasetIdentifier}. Displaying {Math.min(filteredData.length, 100)} of {filteredData.length} matching rows (total {uploadedData.length} rows).</TableCaption>
                 <TableHeader>

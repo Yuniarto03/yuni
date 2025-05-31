@@ -24,7 +24,7 @@ interface SectionConfig {
 
 const sections: SectionConfig[] = [
   { id: "dashboard", title: "Dashboard Overview", icon: LayoutDashboard, description: "Welcome to InsightFlow! Here's a quick overview." },
-  { id: "data-upload", title: "Upload Data", icon: UploadCloud, component: DataUpload, description: "Upload your CSV, XLS, or XLSX files. For Excel, select the sheet to analyze. CSV is recommended for complex files." },
+  { id: "data-upload", title: "Upload Data", icon: UploadCloud, component: DataUpload, description: "Upload your CSV, XLS, or XLSX files. For Excel, select the specific sheet to analyze for accurate table display." },
   { id: "data-table", title: "Explore Data", icon: Table2, component: InteractiveDataTable, description: "Interact with your dataset using search, sort, and filters." },
   { id: "data-summary", title: "Summarize Data", icon: LayoutGrid, component: DataSummarization, description: "Create dynamic pivot-table like summaries." },
   { id: "ai-insights", title: "AI Insights", icon: Brain, component: AIInsights, description: "Leverage AI to uncover insights from your data." },
@@ -47,7 +47,6 @@ export default function InsightFlowPage() {
   }, []);
 
   const renderSectionComponent = (sectionId: string) => {
-    const hasData = uploadedData.length > 0;
     const currentDatasetIdentifier = fileName ? `${fileName}${sheetName ? ` (Sheet: ${sheetName})` : ''}` : "N/A";
 
     switch (sectionId) {
