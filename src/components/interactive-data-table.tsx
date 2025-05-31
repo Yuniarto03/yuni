@@ -164,13 +164,13 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                 <TableBody>
                   {filteredData.length > 0 ? (
                     filteredData.slice(0, 100).map((item, rowIndex) => ( 
-                      <TableRow key={`row-${rowIndex}-${fileName}-${sheetName}`} className="hover:bg-muted/10">
+                      <TableRow key={`row-${rowIndex}-${fileName}-${sheetName || 'no-sheet'}-${Math.random()}`} className="hover:bg-muted/10">
                         {currentVisibleColumns.map((key, cellIndex) => (
                           <TableCell 
-                            key={`cell-${rowIndex}-${key}-${cellIndex}`} 
+                            key={`cell-${rowIndex}-${key}-${cellIndex}-${Math.random()}`} 
                             className={cn(
-                              "whitespace-nowrap",
-                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" 
+                              "whitespace-nowrap", // Default padding p-4 will apply
+                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" // 3rem is h-12 for header
                             )}
                           >
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
@@ -197,5 +197,3 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     </Card>
   );
 }
-
-    
