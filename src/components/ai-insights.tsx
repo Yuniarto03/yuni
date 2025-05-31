@@ -11,27 +11,27 @@ import { useToast } from '@/hooks/use-toast';
 interface AIInsightsProps {
   uploadedData: Record<string, any>[];
   dataFields: string[];
+  datasetIdentifier: string; // e.g., "filename.xlsx (Sheet: Sheet1)"
 }
 
-export function AIInsights({ uploadedData, dataFields }: AIInsightsProps) {
+export function AIInsights({ uploadedData, dataFields, datasetIdentifier }: AIInsightsProps) {
   const [insights, setInsights] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  const generateDataSummaryString = (data: Record<string, any>[], fields: string[]): string => {
-    if (!data || data.length === 0) return "No data available.";
+  const generateDataSummaryString = (data: Record<string, any>[], fields: string[], identifier: string): string => {
+    if (!data || data.length === 0) return `No data available for ${identifier}.`;
     const rowCount = data.length;
     const fieldList = fields.join(', ');
     
-    let summary = `The dataset contains ${rowCount} records. `;
+    let summary = `The dataset from "${identifier}" contains ${rowCount} records. `;
     if (fields.length > 0) {
       summary += `Fields include: ${fieldList}. `;
     }
     
-    // Add a small sample of data (first 1-2 rows, stringified)
     const sampleRows = data.slice(0, 2).map(row => {
       const rowSample: Record<string, any> = {};
-      fields.slice(0, 5).forEach(field => { // Max 5 fields for sample
+      fields.slice(0, 5).forEach(field => { 
         rowSample[field] = row[field];
       });
       return JSON.stringify(rowSample);
@@ -40,10 +40,10 @@ export function AIInsights({ uploadedData, dataFields }: AIInsightsProps) {
     if (sampleRows) {
       summary += `Sample of first few records (up to 5 fields shown): ${sampleRows}`;
     }
-    return summary.substring(0, 10000); // Cap length for AI prompt
+    return summary.substring(0, 10000); 
   };
 
-  const currentDataSummary = useMemo(() => generateDataSummaryString(uploadedData, dataFields), [uploadedData, dataFields]);
+  const currentDataSummary = useMemo(() => generateDataSummaryString(uploadedData, dataFields, datasetIdentifier), [uploadedData, dataFields, datasetIdentifier]);
 
   const handleGenerateInsights = async () => {
     if (uploadedData.length === 0) {
@@ -56,7 +56,7 @@ export function AIInsights({ uploadedData, dataFields }: AIInsightsProps) {
       const input: GenerateNarrativeSummaryInput = { dataSummary: currentDataSummary };
       const output: GenerateNarrativeSummaryOutput = await generateNarrativeSummary(input);
       setInsights(output.narrativeSummary);
-      toast({ title: "AI Insights Generated", description: "Narrative summary has been created."});
+      toast({ title: "AI Insights Generated", description: `Narrative summary for "${datasetIdentifier}" has been created.`});
     } catch (error) {
       console.error("Error generating AI insights:", error);
       setInsights("Failed to generate insights. The AI model might be busy or the data summary could not be processed. Please try again.");
@@ -72,10 +72,11 @@ export function AIInsights({ uploadedData, dataFields }: AIInsightsProps) {
         return;
     }
     toast({ title: "Exporting Insights", description: "AI insights export to text file started..." });
-    const blob = new Blob([`Data Summary Used:\n${currentDataSummary}\n\nAI Insights:\n${insights}`], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([`Dataset: ${datasetIdentifier}\nData Summary Used:\n${currentDataSummary}\n\nAI Insights:\n${insights}`], { type: 'text/plain;charset=utf-8' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'ai_insights.txt';
+    const exportFileName = `${datasetIdentifier.replace(/[^a-z0-9]/gi, '_')}_ai_insights.txt`;
+    link.download = exportFileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -92,7 +93,7 @@ export function AIInsights({ uploadedData, dataFields }: AIInsightsProps) {
           AI-Powered Insights
         </CardTitle>
         <CardDescription>
-          Generate a narrative summary, key findings, root cause analysis, and potential solutions from your data.
+          Generate a narrative summary, key findings, root cause analysis, and potential solutions from {datasetIdentifier ? `"${datasetIdentifier}"` : "your data"}.
           {!canGenerate && " Please upload data first."}
         </CardDescription>
       </CardHeader>
@@ -114,7 +115,7 @@ export function AIInsights({ uploadedData, dataFields }: AIInsightsProps) {
           {isLoading && (
              <div className="flex items-center justify-center p-4 text-muted-foreground">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
-                Generating insights, please wait... This may take a moment.
+                Generating insights for {datasetIdentifier ? `"${datasetIdentifier}"` : "your data"}, please wait...
             </div>
           )}
 

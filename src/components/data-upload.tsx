@@ -1,15 +1,18 @@
 
 "use client";
 
-import React, { useState, useCallback } from 'react';
-import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { UploadCloud, FileText, CheckCircle, AlertCircle, Loader2, SheetIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import * as XLSX from 'xlsx';
 
 interface DataUploadProps {
-  onDataUploaded: (data: Record<string, any>[], fields: string[], fileName: string) => void;
+  onDataUploaded: (data: Record<string, any>[], fields: string[], fileName: string, sheetName?: string) => void;
 }
 
 export function DataUpload({ onDataUploaded }: DataUploadProps) {
@@ -18,7 +21,26 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [parsing, setParsing] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  const [selectedSheetName, setSelectedSheetName] = useState<string>('');
   const { toast } = useToast();
+
+  const resetState = () => {
+    setFile(null);
+    setSheetNames([]);
+    setSelectedSheetName('');
+    setUploadProgress(0);
+    setUploadStatus('idle');
+    setParsing(false);
+  };
+
+  useEffect(() => {
+    // Reset sheet selection if file changes
+    if (file) {
+      setSelectedSheetName(''); // Keep sheetNames until new file potentially provides new ones
+    }
+  }, [file]);
+
 
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -37,25 +59,58 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
     e.stopPropagation();
   };
 
-  const processFile = useCallback((selectedFile: File) => {
-    const allowedExtensions = ['.csv', '.xls', '.xlsx'];
+  const processFileSelection = useCallback(async (selectedFile: File) => {
+    resetState(); // Reset previous file state first
+    setFile(selectedFile); // Set the new file
+    setUploadStatus('idle');
+    
     const fileExtension = selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase();
 
-    if (allowedExtensions.includes(fileExtension)) {
-      setFile(selectedFile);
-      setUploadStatus('idle');
-      toast({ title: "File selected", description: selectedFile.name });
-      if (fileExtension === '.xls' || fileExtension === '.xlsx') {
-        toast({
-          title: "Excel File Selected",
-          description: "Parsing for .xls/.xlsx is basic and may not work for complex files. For best results, please convert to CSV. The system will attempt to process it.",
-          variant: "default",
-          duration: 7000, // Longer duration for this warning
-        });
+    if (fileExtension === '.xls' || fileExtension === '.xlsx') {
+      toast({
+        title: "Excel File Selected",
+        description: "Reading sheet names... Please select a sheet to process.",
+        variant: "default",
+      });
+      try {
+        setParsing(true);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const data = e.target?.result;
+            const workbook = XLSX.read(data, { type: 'array' });
+            setSheetNames(workbook.SheetNames);
+            if (workbook.SheetNames.length > 0) {
+              setSelectedSheetName(workbook.SheetNames[0]); // Auto-select first sheet
+            }
+            toast({ title: "Sheets Loaded", description: "Please select a sheet and click 'Process File'." });
+          } catch (error) {
+            console.error("Error reading Excel sheet names:", error);
+            toast({ title: "Error Reading Sheets", description: "Could not read sheet names from the Excel file.", variant: "destructive" });
+            resetState(); // Reset if sheet reading fails
+          } finally {
+             setParsing(false);
+          }
+        };
+        reader.onerror = () => {
+          toast({ title: "File Read Error", description: "Could not read the selected Excel file.", variant: "destructive" });
+          resetState();
+          setParsing(false);
+        };
+        reader.readAsArrayBuffer(selectedFile);
+      } catch (error) {
+          console.error("Error processing Excel file for sheets:", error);
+          toast({ title: "Excel Processing Error", description: "An error occurred while trying to read sheet names.", variant: "destructive" });
+          resetState();
+          setParsing(false);
       }
+    } else if (fileExtension === '.csv') {
+      toast({ title: "CSV File selected", description: selectedFile.name });
+      setSheetNames([]); // No sheets for CSV
+      setSelectedSheetName('');
     } else {
       toast({ title: "Invalid file type", description: "Please upload a CSV, XLS, or XLSX file.", variant: "destructive" });
-      setFile(null);
+      resetState();
     }
   }, [toast]);
 
@@ -64,36 +119,27 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
     e.stopPropagation();
     setDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processFile(e.dataTransfer.files[0]);
+      processFileSelection(e.dataTransfer.files[0]);
       e.dataTransfer.clearData();
     }
-  }, [processFile]);
+  }, [processFileSelection]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      processFile(e.target.files[0]);
+      processFileSelection(e.target.files[0]);
     }
   };
 
   const parseCSV = (csvText: string): { data: Record<string, any>[], fields: string[] } => {
     const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
     if (lines.length === 0) return { data: [], fields: [] };
-
-    // Basic CSV parsing, assumes comma delimiter.
-    // More robust parsing might be needed for Excel-like CSVs (e.g., handling quotes, other delimiters)
-    const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, '')); // Remove surrounding quotes
+    const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
     const data = lines.slice(1).map(line => {
-      // This is a simplified CSV value parser. It doesn't handle complex cases
-      // like commas within quoted fields, or escaped quotes perfectly.
       const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
       const entry: Record<string, any> = {};
       headers.forEach((header, index) => {
-        const value = values[index] || ''; // Ensure value exists
-        if (value !== "" && !isNaN(Number(value))) {
-          entry[header] = Number(value);
-        } else {
-          entry[header] = value;
-        }
+        const value = values[index] || '';
+        entry[header] = (value !== "" && !isNaN(Number(value))) ? Number(value) : value;
       });
       return entry;
     });
@@ -105,11 +151,20 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
       toast({ title: "No file selected", description: "Please select a file to upload.", variant: "destructive" });
       return;
     }
+
+    const fileExtension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+    if ((fileExtension === '.xls' || fileExtension === '.xlsx') && !selectedSheetName) {
+        toast({ title: "No sheet selected", description: "Please select a sheet to process for the Excel file.", variant: "destructive" });
+        return;
+    }
+
     setUploadStatus('uploading');
     setUploadProgress(0);
     setParsing(true);
 
     const reader = new FileReader();
+    
     reader.onprogress = (event) => {
       if (event.lengthComputable) {
         const progress = Math.round((event.loaded * 100) / event.total);
@@ -118,41 +173,59 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
     };
     reader.onloadend = () => { 
         setUploadProgress(100);
-    }
+    };
+
     reader.onload = (e) => {
       try {
-        const fileContent = e.target?.result as string;
-        // The existing parseCSV function will be used.
-        // For XLS/XLSX, this will likely interpret the binary content as text, leading to garbled data or errors.
-        // A proper Excel parser would be needed here for robust handling.
-        const { data, fields } = parseCSV(fileContent); 
-        
-        if (fields.length === 0 && data.length === 0 && fileContent.length > 0) {
-            // This condition suggests parsing might have failed significantly for a non-empty file
-            toast({ title: "Parsing Issue", description: `Could not effectively parse ${file.name}. If it's an Excel file, try converting to CSV.`, variant: "destructive" });
-            setUploadStatus('error');
-            setParsing(false);
-            return;
+        const fileContent = e.target?.result;
+        let parsedData: Record<string, any>[] = [];
+        let parsedFields: string[] = [];
+
+        if (fileExtension === '.csv' && typeof fileContent === 'string') {
+          const { data, fields } = parseCSV(fileContent);
+          parsedData = data;
+          parsedFields = fields;
+        } else if ((fileExtension === '.xls' || fileExtension === '.xlsx') && fileContent instanceof ArrayBuffer) {
+          const workbook = XLSX.read(fileContent, { type: 'array' });
+          if (!workbook.SheetNames.includes(selectedSheetName)) {
+            throw new Error(`Sheet "${selectedSheetName}" not found in the workbook.`);
+          }
+          const worksheet = workbook.Sheets[selectedSheetName];
+          // Use {header: 1} to get an array of arrays, then process headers.
+          // Use defval: '' to ensure empty cells are read as empty strings not undefined.
+          const jsonDataRaw = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, blankrows: false, defval: '' });
+          
+          if (jsonDataRaw.length === 0) {
+            parsedFields = [];
+            parsedData = [];
+          } else {
+            parsedFields = jsonDataRaw[0].map(String); // First row as headers
+            parsedData = jsonDataRaw.slice(1).map(rowArray => {
+              const rowObject: Record<string, any> = {};
+              parsedFields.forEach((header, index) => {
+                const value = rowArray[index];
+                rowObject[header] = (value !== "" && value !== null && !isNaN(Number(value))) ? Number(value) : value;
+              });
+              return rowObject;
+            });
+          }
+        } else {
+            throw new Error("Unsupported file type or content for parsing.");
         }
-         if (fields.length === 0 || (data.length === 0 && linesToExpectDataFrom(fileContent) > 1) ) {
-            // If there are no fields, or no data rows when we expected some (e.g. more than just a header row)
-            const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-            let errorDesc = "Could not parse the file. Ensure it's valid and non-empty.";
-            if (ext === '.xls' || ext === '.xlsx') {
-                errorDesc = `Could not properly parse ${file.name}. The current parser is optimized for CSV. Please try converting complex Excel files to CSV for best results.`;
-            }
-            toast({ title: "Parsing Error", description: errorDesc, variant: "destructive" });
+        
+        if (parsedFields.length === 0 && parsedData.length === 0 && file.size > 0) {
+            toast({ title: "Parsing Issue", description: `Could not effectively parse ${file.name}${selectedSheetName ? ` (Sheet: ${selectedSheetName})` : ''}. The sheet might be empty or the format unrecognized.`, variant: "destructive" });
             setUploadStatus('error');
             setParsing(false);
             return;
         }
 
-        onDataUploaded(data, fields, file.name);
+        onDataUploaded(parsedData, parsedFields, file.name, selectedSheetName || undefined);
         setUploadStatus('success');
-        toast({ title: "Processing complete", description: `${file.name} has been processed.` });
-      } catch (error) {
+        toast({ title: "Processing complete", description: `${file.name}${selectedSheetName ? ` (Sheet: ${selectedSheetName})` : ''} has been processed.` });
+      } catch (error: any) {
         console.error("Error parsing file:", error);
-        toast({ title: "Parsing Error", description: `An error occurred while processing ${file.name}. It might be an unsupported format or corrupted.`, variant: "destructive" });
+        toast({ title: "Parsing Error", description: `An error occurred while processing ${file.name}: ${error.message || 'Unknown error'}. It might be an unsupported format or corrupted.`, variant: "destructive" });
         setUploadStatus('error');
       } finally {
         setParsing(false);
@@ -163,15 +236,13 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
       setUploadStatus('error');
       setParsing(false);
     };
-    // For XLS/XLSX, readAsText will read the binary content as text.
-    // A library approach would use readAsArrayBuffer or similar then pass to the library.
-    reader.readAsText(file); 
-  };
 
-  // Helper to check if we should expect data rows based on lines
-  const linesToExpectDataFrom = (content: string) => {
-    return content.split(/\r\n|\n/).filter(line => line.trim() !== '').length;
-  }
+    if (fileExtension === '.csv') {
+        reader.readAsText(file);
+    } else if (fileExtension === '.xls' || fileExtension === '.xlsx') {
+        reader.readAsArrayBuffer(file);
+    }
+  };
 
   return (
     <Card className="bg-card/80 backdrop-blur-sm shadow-xl">
@@ -180,7 +251,7 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
           <UploadCloud className="text-primary" />
           Upload Your Data
         </CardTitle>
-        <CardDescription>Upload a CSV, XLS, or XLSX file to begin analysis. Ensure the first row contains headers. Parsing for XLS/XLSX is basic; CSV is recommended for complex files.</CardDescription>
+        <CardDescription>Upload a CSV, XLS, or XLSX file. For Excel files, select the sheet to process. Ensure the first row contains headers.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div
@@ -210,30 +281,63 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
           </Button>
         </div>
 
+        {file && sheetNames.length > 0 && (
+          <div className="space-y-2">
+            <Label htmlFor="sheetSelect" className="flex items-center gap-2 text-sm font-medium">
+                <SheetIcon className="w-4 h-4 text-muted-foreground"/> Select Sheet:
+            </Label>
+            <Select value={selectedSheetName} onValueChange={setSelectedSheetName} disabled={parsing}>
+              <SelectTrigger id="sheetSelect" className="w-full bg-input focus:bg-background">
+                <SelectValue placeholder="Select a sheet" />
+              </SelectTrigger>
+              <SelectContent>
+                {sheetNames.map(name => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {file && uploadStatus !== 'uploading' && uploadStatus !== 'success' && (
           <div className="flex items-center justify-between p-3 bg-muted rounded-md">
             <div className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-primary" />
-              <span className="text-sm font-medium">{file.name} ({Math.round(file.size / 1024)} KB)</span>
+              <span className="text-sm font-medium">{file.name} ({Math.round(file.size / 1024)} KB)
+                {sheetNames.length > 0 && selectedSheetName && ` - Sheet: ${selectedSheetName}`}
+              </span>
             </div>
-            <Button onClick={handleUploadAndParse} className="bg-magentaAccent hover:bg-magentaAccent/90 text-magenta-accent-foreground" disabled={parsing}>
+            <Button 
+              onClick={handleUploadAndParse} 
+              className="bg-magentaAccent hover:bg-magentaAccent/90 text-magenta-accent-foreground" 
+              disabled={parsing || (sheetNames.length > 0 && !selectedSheetName)}
+            >
               {parsing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <UploadCloud className="mr-2 h-4 w-4" />}
               {parsing ? 'Processing...' : 'Process File'}
             </Button>
           </div>
         )}
 
-        {(uploadStatus === 'uploading' || parsing) && uploadProgress < 100 && (
+        {(uploadStatus === 'uploading' || parsing) && uploadProgress < 100 && !sheetNames.length && ( // Only show progress if not waiting for sheet names
           <div className="space-y-2">
-            <p className="text-sm text-center">{uploadStatus === 'uploading' && !parsing ? `Reading ${file?.name}...` : `Processing ${file?.name}...`}</p>
+            <p className="text-sm text-center">{parsing && file?.name.endsWith('.xls') || file?.name.endsWith('.xlsx') ? `Reading sheets from ${file?.name}...` : (uploadStatus === 'uploading' && !parsing ? `Reading ${file?.name}...` : `Processing ${file?.name}...`)}</p>
             <Progress value={uploadProgress} className="w-full [&>div]:bg-primary" />
           </div>
         )}
+         {parsing && (file?.name.endsWith('.xls') || file?.name.endsWith('.xlsx')) && sheetNames.length === 0 && (
+            <div className="flex items-center justify-center p-4 text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
+                Reading sheet names from Excel file...
+            </div>
+        )}
+
 
         {uploadStatus === 'success' && (
           <div className="flex items-center gap-2 p-3 bg-green-500/10 text-green-400 rounded-md">
             <CheckCircle className="w-5 h-5" />
-            <span className="text-sm font-medium">{file?.name} processed successfully! View data in other sections.</span>
+            <span className="text-sm font-medium">{file?.name}{selectedSheetName ? ` (Sheet: ${selectedSheetName})` : ''} processed successfully! View data in other sections.</span>
           </div>
         )}
 

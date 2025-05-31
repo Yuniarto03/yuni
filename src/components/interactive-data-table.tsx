@@ -22,12 +22,13 @@ interface InteractiveDataTableProps {
   uploadedData: Record<string, any>[];
   dataFields: string[];
   fileName: string | null;
+  sheetName?: string | null; // Added sheetName prop
 }
 
 type DataItem = Record<string, any>;
 type DataKey = string;
 
-export function InteractiveDataTable({ uploadedData, dataFields, fileName }: InteractiveDataTableProps) {
+export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheetName }: InteractiveDataTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [visibleColumns, setVisibleColumns] = useState<Record<DataKey, boolean>>({});
   const { toast } = useToast();
@@ -49,6 +50,9 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
     );
   }, [uploadedData, searchTerm]);
 
+  const currentDatasetIdentifier = fileName ? `${fileName}${sheetName ? ` (Sheet: ${sheetName})` : ''}` : "your data";
+
+
   const handleExport = () => {
     if (filteredData.length === 0) {
       toast({ title: "No Data", description: "No data available to export.", variant: "destructive" });
@@ -62,7 +66,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
       activeFields.map(field => {
         let value = row[field];
         if (typeof value === 'string' && value.includes(',')) {
-          return `"${value}"`; // Quote fields with commas
+          return `"${value}"`; 
         }
         return value;
       }).join(',')
@@ -74,7 +78,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
     if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
-        link.setAttribute("download", `${fileName || 'exported_data'}_table.csv`);
+        const exportFileName = `${fileName || 'exported_data'}${sheetName ? `_${sheetName.replace(/[^a-z0-9]/gi, '_')}` : ''}_table.csv`;
+        link.setAttribute("download", exportFileName);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -93,8 +98,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
           Explore Your Data
         </CardTitle>
         <CardDescription>
-          {fileName ? `Displaying data from: ${fileName}. ` : "Upload a file (CSV, XLS, XLSX) to see your data. "}
-          CSV format is recommended for best parsing results with the current system.
+          {fileName ? `Displaying data from: ${currentDatasetIdentifier}. ` : "Upload a file (CSV, XLS, XLSX) to see your data. "}
+          CSV format is recommended for best parsing results with the current system. For Excel, ensure the correct sheet is selected.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -129,7 +134,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
                         onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, [key]: !!checked }))}
                         className="capitalize"
                       >
-                        {key.replace(/([A-Z])/g, ' $1')}
+                        {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}
                       </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuContent>
@@ -140,13 +145,13 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-md border">
+            <div className="h-[60vh] overflow-auto rounded-md border">
               <Table>
-                <TableCaption>A view of your uploaded data. Displaying {filteredData.length} of {uploadedData.length} rows.</TableCaption>
+                <TableCaption>A view of {currentDatasetIdentifier}. Displaying {Math.min(filteredData.length, 100)} of {filteredData.length} matching rows (total {uploadedData.length} rows).</TableCaption>
                 <TableHeader>
                   <TableRow className="hover:bg-muted/20">
                     {currentVisibleColumns.map(key => (
-                      <TableHead key={key} className="capitalize font-semibold text-foreground">
+                      <TableHead key={key} className="sticky top-0 z-10 bg-card whitespace-nowrap capitalize font-semibold text-foreground">
                         {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1')}
                       </TableHead>
                     ))}
@@ -154,10 +159,10 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
                 </TableHeader>
                 <TableBody>
                   {filteredData.length > 0 ? (
-                    filteredData.slice(0, 100).map((item, rowIndex) => ( // Display up to 100 rows for performance
+                    filteredData.slice(0, 100).map((item, rowIndex) => ( 
                       <TableRow key={`row-${rowIndex}`} className="hover:bg-muted/10">
                         {currentVisibleColumns.map(key => (
-                          <TableCell key={`${key}-${rowIndex}`} className="py-3">
+                          <TableCell key={`${key}-${rowIndex}`} className="py-3 whitespace-nowrap">
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
                           </TableCell>
                         ))}

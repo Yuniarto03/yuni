@@ -17,6 +17,7 @@ type ForecastHorizon = 'monthly' | 'quarterly' | 'yearly';
 interface ForecastAnalysisProps {
   uploadedData: Record<string, any>[];
   dataFields: string[];
+  datasetIdentifier: string;
 }
 
 const defaultChartData = [
@@ -28,7 +29,7 @@ const defaultChartData = [
   { month: "Jun", actual: 0, forecast: 0 },
 ];
 
-export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisProps) {
+export function ForecastAnalysis({ uploadedData, dataFields, datasetIdentifier }: ForecastAnalysisProps) {
   const [forecastHorizon, setForecastHorizon] = useState<ForecastHorizon>('monthly');
   const [forecastNarrative, setForecastNarrative] = useState('');
   const [chartData, setChartData] = useState<any[]>(defaultChartData);
@@ -45,8 +46,16 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
       const sample = uploadedData[0];
       const numFields = dataFields.filter(f => typeof sample[f] === 'number');
       setNumericFields(numFields);
-      // Basic date field detection (could be improved)
-      const dtFields = dataFields.filter(f => typeof sample[f] === 'string' && (sample[f].match(/^\d{4}-\d{2}-\d{2}/) || sample[f].match(/^\d{1,2}\/\d{1,2}\/\d{2,4}/) || new Date(sample[f]).toString() !== "Invalid Date"));
+      const dtFields = dataFields.filter(f => {
+        const val = sample[f];
+        if (typeof val === 'string') {
+          return val.match(/^\d{4}-\d{2}-\d{2}/) || val.match(/^\d{1,2}\/\d{1,2}\/\d{2,4}/) || !isNaN(new Date(val).getTime());
+        }
+        if (typeof val === 'number' && val > 1000000000000 && val < 3000000000000) { // Basic timestamp check
+             return !isNaN(new Date(val).getTime());
+        }
+        return false;
+      });
       setDateLikeFields(dtFields);
 
       if (dtFields.length > 0) setDateField(dtFields[0]);
@@ -71,17 +80,17 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
   }), [valueField]);
 
 
-  const generateDataSummaryString = (data: Record<string, any>[], fields: string[]): string => {
-     if (!data || data.length === 0) return "No data available.";
+  const generateDataSummaryString = (data: Record<string, any>[], fields: string[], identifier: string): string => {
+     if (!data || data.length === 0) return `No data available for ${identifier}.`;
     const rowCount = data.length;
     const fieldList = fields.join(', ');
-    let summary = `The dataset contains ${rowCount} records. Fields include: ${fieldList}. `;
+    let summary = `The dataset from "${identifier}" contains ${rowCount} records. Fields include: ${fieldList}. `;
     const sampleRows = data.slice(0, 1).map(row => JSON.stringify(row)).join('; ');
     if (sampleRows) summary += `First record sample: ${sampleRows}`;
     return summary.substring(0, 10000);
   };
 
-  const currentDataSummary = useMemo(() => generateDataSummaryString(uploadedData, dataFields), [uploadedData, dataFields]);
+  const currentDataSummary = useMemo(() => generateDataSummaryString(uploadedData, dataFields, datasetIdentifier), [uploadedData, dataFields, datasetIdentifier]);
   
   const handleGenerateForecast = async () => {
     if (!dateField || !valueField) {
@@ -95,12 +104,11 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
 
     setIsLoading(true);
     setForecastNarrative('');
-    // setChartData(defaultChartData);
 
     try {
       const input: GenerateForecastAnalysisInput = {
         dataSummary: currentDataSummary,
-        selectedFields: [dateField, valueField], // AI will need to understand these roles
+        selectedFields: [dateField, valueField], 
         forecastHorizon: forecastHorizon,
         existingAnalysis: forecastNarrative || undefined,
       };
@@ -111,7 +119,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
         const parsedChartData = JSON.parse(output.chartData);
         if (Array.isArray(parsedChartData) && parsedChartData.length > 0 && dateField && valueField) {
            setChartData(parsedChartData.map(d => ({
-            [dateField]: d.date || d[dateField], 
+            [dateField]: d.date || d[dateField] || d.Month || d.Quarter || d.Year, 
             [valueField]: d.actual || d[valueField], 
             forecast: d.forecast
           })));
@@ -120,16 +128,20 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
         }
       } catch (e) {
         console.warn("AI returned non-JSON or invalid chart data. Raw data:", output.chartData, "Error:", e);
-        toast({title: "Chart Data Issue", description: "AI returned chart data that couldn't be parsed or used. Displaying placeholder.", variant: "default"});
-        const newForecastData = uploadedData.slice(0, 20).map(d => ({
+        toast({title: "Chart Data Issue", description: "AI returned chart data that couldn't be parsed. Displaying fallback forecast visualization.", variant: "default"});
+        const newForecastData = uploadedData.slice(0, Math.min(20, uploadedData.length)).map(d => ({
             [dateField]: d[dateField],
             [valueField]: d[valueField],
-            forecast: (d[valueField] || 0) * (1 + (Math.random() - 0.4) * 0.3) 
-        })).sort((a,b) => new Date(a[dateField]).getTime() - new Date(b[dateField]).getTime());
+            forecast: (Number(d[valueField]) || 0) * (1 + (Math.random() - 0.4) * 0.3) 
+        })).sort((a,b) => {
+            const dateA = new Date(a[dateField]).getTime();
+            const dateB = new Date(b[dateField]).getTime();
+            return (isNaN(dateA) || isNaN(dateB)) ? 0 : dateA - dateB;
+        });
         setChartData(newForecastData);
       }
 
-      toast({ title: "Forecast Generated", description: `A ${forecastHorizon} forecast has been created.`});
+      toast({ title: "Forecast Generated", description: `A ${forecastHorizon} forecast for "${datasetIdentifier}" has been created.`});
     } catch (error) {
       console.error("Error generating forecast analysis:", error);
       setForecastNarrative("Failed to generate forecast. The AI model might be busy or encountered an issue. Please try again.");
@@ -146,7 +158,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
     }
     toast({ title: "Exporting Forecast", description: "Forecast data and narrative export started..." });
     
-    let content = `Forecast Horizon: ${forecastHorizon}\nDate Field: ${dateField}\nValue Field: ${valueField}\n\nForecast Narrative:\n${forecastNarrative}\n\nChart Data:\n`;
+    let content = `Dataset: ${datasetIdentifier}\nForecast Horizon: ${forecastHorizon}\nDate Field: ${dateField}\nValue Field: ${valueField}\n\nForecast Narrative:\n${forecastNarrative}\n\nChart Data:\n`;
     const headers = [dateField || 'date', valueField || 'actual', 'forecast'].join(',');
     const dataRows = chartData.map(row => 
         [row[dateField || 'date'], row[valueField || 'actual'], row.forecast].join(',')
@@ -156,7 +168,8 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", "forecast_analysis.txt");
+    const exportFileName = `${datasetIdentifier.replace(/[^a-z0-9]/gi, '_')}_forecast_analysis.txt`;
+    link.setAttribute("download", exportFileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -172,7 +185,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
             <TrendingUp className="text-primary" />
             Forecast Analysis
           </CardTitle>
-          <CardDescription>Generate monthly, quarterly, or yearly forecasts for your data.</CardDescription>
+          <CardDescription>Generate monthly, quarterly, or yearly forecasts. Upload data to enable.</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a file in the 'Upload Data' section to use this feature.</p>
@@ -189,7 +202,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
           <TrendingUp className="text-primary" />
           Forecast Analysis
         </CardTitle>
-        <CardDescription>Generate monthly, quarterly, or yearly forecasts for your data. Select date and value fields below.</CardDescription>
+        <CardDescription>Generate forecasts for {datasetIdentifier ? `"${datasetIdentifier}"` : "your data"}. Select date and value fields below.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-center">
@@ -208,7 +221,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
           </div>
 
            <Select value={dateField} onValueChange={setDateField}>
-            <SelectTrigger className="w-full bg-input focus:bg-background">
+            <SelectTrigger className="w-full bg-input focus:bg-background" disabled={dateLikeFields.length === 0}>
               <SelectValue placeholder="Select Date/Time Field" />
             </SelectTrigger>
             <SelectContent>
@@ -219,7 +232,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
           </Select>
 
           <Select value={valueField} onValueChange={setValueField}>
-            <SelectTrigger className="w-full bg-input focus:bg-background">
+            <SelectTrigger className="w-full bg-input focus:bg-background" disabled={numericFields.length === 0}>
               <SelectValue placeholder="Select Value Field (Numeric)" />
             </SelectTrigger>
             <SelectContent>
@@ -250,11 +263,11 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
         {isLoading && (
             <div className="flex items-center justify-center p-4 text-muted-foreground">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin text-primary" />
-                Generating forecast, please wait... This may take some time.
+                Generating forecast for {datasetIdentifier ? `"${datasetIdentifier}"` : "your data"}, please wait...
             </div>
         )}
 
-        {!isLoading && chartData.length > 0 && chartData.some(d => d[valueField || 'actual'] !== 0 || d.forecast !== 0) && valueField && dateField && (
+        {!isLoading && chartData.length > 0 && chartData.some(d => (d[valueField || 'actual'] !== 0 && d[valueField || 'actual'] !== undefined) || (d.forecast !== 0 && d.forecast !== undefined)) && valueField && dateField && (
           <ChartContainer config={chartConfig} className="h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <ReLineChart data={chartData} margin={{ top: 5, right: 20, left: -20, bottom: 5 }}>
@@ -262,13 +275,20 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
                 <XAxis 
                     dataKey={dateField} 
                     stroke="hsl(var(--muted-foreground))" 
-                    tickFormatter={(tick) => typeof tick === 'string' && tick.includes('-') ? tick.split('-')[1]+'/'+tick.split('-')[0].slice(-2) : tick } 
+                    tickFormatter={(tick) => {
+                        if (typeof tick === 'string' && (tick.includes('-') || tick.includes('/'))) {
+                            const date = new Date(tick);
+                            if (!isNaN(date.getTime())) return `${String(date.getMonth() + 1).padStart(2,'0')}/${String(date.getFullYear()).slice(-2)}`;
+                        }
+                        return String(tick); // Fallback
+                    }}
+                    tick={{fontSize: 10}}
                 />
-                <YAxis dataKey={valueField} stroke="hsl(var(--muted-foreground))" />
+                <YAxis dataKey={valueField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
                 <ChartTooltip content={<ChartTooltipContent />} />
                 <ChartLegend content={<ChartLegendContent />} />
-                <Line type="monotone" dataKey={valueField} stroke="var(--color-value)" strokeWidth={2} dot={false} name={valueField} />
-                <Line type="monotone" dataKey="forecast" stroke="var(--color-forecast)" strokeWidth={2} strokeDasharray="5 5" dot={false} name={`Forecast (${valueField})`} />
+                <Line type="monotone" dataKey={valueField} stroke="var(--color-value)" strokeWidth={2} dot={false} name={valueField} connectNulls={true} />
+                <Line type="monotone" dataKey="forecast" stroke="var(--color-forecast)" strokeWidth={2} strokeDasharray="5 5" dot={false} name={`Forecast (${valueField})`} connectNulls={true} />
               </ReLineChart>
             </ResponsiveContainer>
           </ChartContainer>
@@ -283,9 +303,9 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
           </div>
         )}
         
-        {!isLoading && (forecastNarrative || chartData.some(d => d[valueField||'actual'] !== 0 || d.forecast !== 0)) && (
+        {!isLoading && (forecastNarrative || chartData.some(d => (d[valueField||'actual'] !== 0 && d[valueField||'actual'] !== undefined) || (d.forecast !== 0 && d.forecast !== undefined))) && (
           <div className="flex justify-end mt-4">
-            <Button onClick={handleExport} variant="outline" disabled={!forecastNarrative && chartData.every(d => d.actual === 0 && d.forecast === 0)}>
+            <Button onClick={handleExport} variant="outline">
               <FileSpreadsheet className="mr-2 h-4 w-4" /> Export Forecast
             </Button>
           </div>
@@ -294,5 +314,3 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
     </Card>
   );
 }
-
-    

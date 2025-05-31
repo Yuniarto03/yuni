@@ -24,7 +24,7 @@ interface SectionConfig {
 
 const sections: SectionConfig[] = [
   { id: "dashboard", title: "Dashboard Overview", icon: LayoutDashboard, description: "Welcome to InsightFlow! Here's a quick overview." },
-  { id: "data-upload", title: "Upload Data", icon: UploadCloud, component: DataUpload, description: "Upload your CSV, XLS, or XLSX files to get started. CSV is recommended for complex files." },
+  { id: "data-upload", title: "Upload Data", icon: UploadCloud, component: DataUpload, description: "Upload your CSV, XLS, or XLSX files. For Excel, select the sheet to analyze. CSV is recommended for complex files." },
   { id: "data-table", title: "Explore Data", icon: Table2, component: InteractiveDataTable, description: "Interact with your dataset using search, sort, and filters." },
   { id: "data-summary", title: "Summarize Data", icon: LayoutGrid, component: DataSummarization, description: "Create dynamic pivot-table like summaries." },
   { id: "ai-insights", title: "AI Insights", icon: Brain, component: AIInsights, description: "Leverage AI to uncover insights from your data." },
@@ -37,42 +37,46 @@ export default function InsightFlowPage() {
   const [uploadedData, setUploadedData] = useState<Record<string, any>[]>([]);
   const [dataFields, setDataFields] = useState<string[]>([]);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [sheetName, setSheetName] = useState<string | null>(null);
 
-  const handleDataUploaded = useCallback((data: Record<string, any>[], fields: string[], name: string) => {
+  const handleDataUploaded = useCallback((data: Record<string, any>[], fields: string[], name: string, sName?: string) => {
     setUploadedData(data);
     setDataFields(fields);
     setFileName(name);
+    setSheetName(sName || null);
   }, []);
 
   const renderSectionComponent = (sectionId: string) => {
     const hasData = uploadedData.length > 0;
+    const currentDatasetIdentifier = fileName ? `${fileName}${sheetName ? ` (Sheet: ${sheetName})` : ''}` : "N/A";
+
     switch (sectionId) {
       case 'data-upload':
         return <DataUpload onDataUploaded={handleDataUploaded} />;
       case 'data-table':
-        return <InteractiveDataTable uploadedData={uploadedData} dataFields={dataFields} fileName={fileName} />;
+        return <InteractiveDataTable uploadedData={uploadedData} dataFields={dataFields} fileName={fileName} sheetName={sheetName} />;
       case 'data-summary':
         return <DataSummarization uploadedData={uploadedData} dataFields={dataFields} />;
       case 'ai-insights':
-        return <AIInsights uploadedData={uploadedData} dataFields={dataFields} />;
+        return <AIInsights uploadedData={uploadedData} dataFields={dataFields} datasetIdentifier={currentDatasetIdentifier}/>;
       case 'forecast-analysis':
-        return <ForecastAnalysis uploadedData={uploadedData} dataFields={dataFields} />;
+        return <ForecastAnalysis uploadedData={uploadedData} dataFields={dataFields} datasetIdentifier={currentDatasetIdentifier} />;
       case 'data-visualization':
-        return <DataVisualization uploadedData={uploadedData} dataFields={dataFields} />;
+        return <DataVisualization uploadedData={uploadedData} dataFields={dataFields} datasetIdentifier={currentDatasetIdentifier}/>;
       case 'dashboard':
          return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <div className="bg-card/50 p-6 rounded-lg shadow-lg">
                 <h3 className="font-headline text-xl text-primary mb-2">Quick Stats</h3>
                 <p className="text-muted-foreground">Datasets Uploaded: {fileName ? 1: 0}</p>
-                <p className="text-muted-foreground">Current Dataset: {fileName || "N/A"}</p>
+                <p className="text-muted-foreground">Current Dataset: {currentDatasetIdentifier}</p>
                 <p className="text-muted-foreground">Rows: {uploadedData.length}</p>
                 <p className="text-muted-foreground">Columns: {dataFields.length}</p>
               </div>
                <div className="bg-card/50 p-6 rounded-lg shadow-lg">
                 <h3 className="font-headline text-xl text-accent mb-2">Recent Activity</h3>
                 <ul className="list-disc list-inside text-muted-foreground space-y-1 text-sm">
-                  {fileName ? <li>Uploaded '{fileName}'</li> : <li>No data uploaded yet.</li>}
+                  {fileName ? <li>Uploaded '{currentDatasetIdentifier}'</li> : <li>No data uploaded yet.</li>}
                   <li>Generated forecast for 'Product Alpha' (Demo)</li>
                   <li>Shared 'Customer Segmentation' report (Demo)</li>
                 </ul>
@@ -81,6 +85,7 @@ export default function InsightFlowPage() {
                 <h3 className="font-headline text-xl text-secondary mb-2">Tips & Tricks</h3>
                 <p className="text-muted-foreground text-sm">Use <kbd className="px-2 py-1 text-xs font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded-lg">Ctrl/Cmd + B</kbd> to toggle the sidebar.</p>
                  <p className="text-muted-foreground text-sm mt-1">Ensure your CSV file has headers in the first row.</p>
+                 <p className="text-muted-foreground text-sm mt-1">For Excel, select the correct sheet for analysis.</p>
               </div>
             </div>
           );

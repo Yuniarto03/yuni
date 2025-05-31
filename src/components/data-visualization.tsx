@@ -16,6 +16,7 @@ type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar';
 interface DataVisualizationProps {
   uploadedData: Record<string, any>[];
   dataFields: string[];
+  datasetIdentifier: string;
 }
 
 const chartIcons: Record<ChartType, React.ElementType> = {
@@ -29,112 +30,166 @@ const chartIcons: Record<ChartType, React.ElementType> = {
 
 const NO_FIELD_SELECTED_VALUE = "__NONE_FIELD_SELECTION__";
 
-export function DataVisualization({ uploadedData, dataFields }: DataVisualizationProps) {
+export function DataVisualization({ uploadedData, dataFields, datasetIdentifier }: DataVisualizationProps) {
   const [chartType, setChartType] = useState<ChartType>('bar');
   const [xAxisField, setXAxisField] = useState<string | undefined>(undefined);
   const [yAxisField, setYAxisField] = useState<string | undefined>(undefined);
-  const [yAxisField2, setYAxisField2] = useState<string | undefined>(undefined); // Optional second Y-axis field
+  const [yAxisField2, setYAxisField2] = useState<string | undefined>(undefined); 
   const { toast } = useToast();
 
   const numericFields = useMemo(() => {
     if (uploadedData.length === 0) return [];
-    return dataFields.filter(field => typeof uploadedData[0][field] === 'number');
+    return dataFields.filter(field => typeof uploadedData[0][field] === 'number' && uploadedData.every(d => typeof d[field] === 'number' || d[field] === null || d[field] === undefined));
   }, [uploadedData, dataFields]);
 
   const categoricalFields = useMemo(() => {
      if (uploadedData.length === 0) return [];
     return dataFields.filter(field => {
-        if (typeof uploadedData[0][field] === 'number' && uploadedData.every(d => typeof d[field] === 'number')) return false; 
+        if (numericFields.includes(field)) return false; 
         const uniqueValues = new Set(uploadedData.map(d => d[field]));
         return uniqueValues.size <= 50 || typeof uploadedData[0][field] === 'string'; 
     });
-  }, [uploadedData, dataFields]);
+  }, [uploadedData, dataFields, numericFields]);
 
-  const xAxisOptions = useMemo(() => categoricalFields.length > 0 ? categoricalFields : dataFields, [categoricalFields, dataFields]);
+  const xAxisOptions = useMemo(() => {
+     if (chartType === 'pie' || chartType === 'radar' ) return categoricalFields.length > 0 ? categoricalFields : dataFields.filter(f => !numericFields.includes(f));
+     return dataFields; // All fields for general charts like bar, line, area, scatter
+  }, [categoricalFields, dataFields, chartType, numericFields]);
 
 
   useEffect(() => {
     if (dataFields.length > 0) {
       setXAxisField(xAxisOptions[0] || dataFields[0]);
       setYAxisField(numericFields[0] || undefined);
-      setYAxisField2(numericFields[1] || undefined);
+      setYAxisField2(numericFields.filter(f => f !== (numericFields[0] || ""))[0] || undefined);
     } else {
       setXAxisField(undefined);
       setYAxisField(undefined);
       setYAxisField2(undefined);
     }
-  }, [dataFields, numericFields, xAxisOptions]);
+  }, [dataFields, numericFields, xAxisOptions]); // xAxisOptions dependency added
 
   const chartConfig = useMemo(() => {
     const config: Record<string, {label: string, color: string}> = {};
-    if (yAxisField) config[yAxisField] = { label: yAxisField, color: "hsl(var(--chart-1))" };
-    if (yAxisField2 && yAxisField2 !== yAxisField) config[yAxisField2] = { label: yAxisField2, color: "hsl(var(--chart-2))" };
+    if (yAxisField) config[yAxisField] = { label: yAxisField.replace(/_/g, ' '), color: "hsl(var(--chart-1))" };
+    if (yAxisField2 && yAxisField2 !== yAxisField) config[yAxisField2] = { label: yAxisField2.replace(/_/g, ' '), color: "hsl(var(--chart-2))" };
     return config;
   }, [yAxisField, yAxisField2]);
 
   const displayData = useMemo(() => {
-    if (chartType === 'pie' && xAxisField && yAxisField && uploadedData.length > 0) {
+    if (uploadedData.length === 0) return [];
+    
+    let processedData = uploadedData.map(item => {
+        const newItem = {...item};
+        if (xAxisField && typeof newItem[xAxisField] !== 'string') {
+            newItem[xAxisField] = String(newItem[xAxisField]);
+        }
+        if (yAxisField && typeof newItem[yAxisField] !== 'number') {
+             newItem[yAxisField] = parseFloat(String(newItem[yAxisField]));
+        }
+        if (yAxisField2 && typeof newItem[yAxisField2] !== 'number') {
+            newItem[yAxisField2] = parseFloat(String(newItem[yAxisField2]));
+        }
+        return newItem;
+    });
+
+    if (chartType === 'pie' && xAxisField && yAxisField) {
         const aggregated: Record<string, number> = {};
-        uploadedData.forEach(item => {
-            const category = String(item[xAxisField]);
-            const value = parseFloat(item[yAxisField]);
+        processedData.forEach(item => {
+            const category = String(item[xAxisField]); // Ensure category is string
+            const value = item[yAxisField]; // Already parsed to float or NaN
             if (!isNaN(value)) {
                 aggregated[category] = (aggregated[category] || 0) + value;
             }
         });
-        return Object.entries(aggregated).map(([name, value]) => ({ [xAxisField]: name, [yAxisField]: value })).slice(0,10);
+        return Object.entries(aggregated).map(([name, value]) => ({ [xAxisField]: name, [yAxisField]: value })).slice(0,10); // Top 10 for pie
     }
-    return uploadedData.slice(0, 100); 
-  }, [uploadedData, chartType, xAxisField, yAxisField]);
+    
+    if (chartType === 'radar' && xAxisField && yAxisField) {
+         // For radar, group by x-axis, sum y-axis (similar to pie but can have multiple y-axes later)
+         const aggregated: Record<string, any> = {};
+         processedData.forEach(item => {
+            const category = String(item[xAxisField]);
+             if (!aggregated[category]) aggregated[category] = { [xAxisField]: category };
+             
+             const val1 = item[yAxisField];
+             if (yAxisField && !isNaN(val1)) {
+                 aggregated[category][yAxisField] = (aggregated[category][yAxisField] || 0) + val1;
+             }
+             const val2 = item[yAxisField2];
+             if (yAxisField2 && !isNaN(val2)) {
+                 aggregated[category][yAxisField2] = (aggregated[category][yAxisField2] || 0) + val2;
+             }
+         });
+         return Object.values(aggregated).slice(0, 8); // Max 8 categories for radar
+    }
+    
+    return processedData.slice(0, 100); // Limit other charts for performance
+  }, [uploadedData, chartType, xAxisField, yAxisField, yAxisField2]);
 
 
   const renderChart = () => {
     if (!xAxisField || !yAxisField || displayData.length === 0) {
-      return <p className="text-muted-foreground text-center p-10">Please select valid X and Y axis fields. Ensure Y axis field is numeric.</p>;
+      return <p className="text-muted-foreground text-center p-10">Please select valid X and Y axis fields. Ensure Y axis field is numeric. Chart data may be limited.</p>;
     }
+
+    const commonXAxisProps = {
+      dataKey: xAxisField,
+      stroke: "hsl(var(--muted-foreground))",
+      tick: { fontSize: 10 },
+      interval: displayData.length > 20 ? 'preserveStartEnd' : 0,
+      allowDuplicatedCategory: chartType !== 'bar' && chartType !== 'line' && chartType !== 'area', // Allow for scatter
+      name: xAxisField.replace(/_/g, ' '),
+    };
+    const commonYAxisProps = {
+        stroke: "hsl(var(--muted-foreground))",
+        tick: { fontSize: 10 },
+        name: yAxisField.replace(/_/g, ' '),
+    };
+
 
     switch (chartType) {
       case 'bar':
         return (
           <ReBarChart data={displayData}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
-            <XAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} interval={displayData.length > 20 ? 'preserveStartEnd' : 0} />
-            <YAxis stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
+            <XAxis {...commonXAxisProps} />
+            <YAxis {...commonYAxisProps} />
             <ChartTooltip content={<ChartTooltipContent />} />
             <ChartLegend content={<ChartLegendContent />} />
-            <Bar dataKey={yAxisField} fill={`var(--color-${yAxisField})`} radius={4} name={yAxisField} />
-            {yAxisField2 && yAxisField2 !== yAxisField && <Bar dataKey={yAxisField2} fill={`var(--color-${yAxisField2})`} radius={4} name={yAxisField2}/>}
+            <Bar dataKey={yAxisField} fill={`var(--color-${yAxisField})`} radius={4} name={yAxisField.replace(/_/g, ' ')} />
+            {yAxisField2 && yAxisField2 !== yAxisField && <Bar dataKey={yAxisField2} fill={`var(--color-${yAxisField2})`} radius={4} name={yAxisField2.replace(/_/g, ' ')}/>}
           </ReBarChart>
         );
       case 'line':
         return (
           <ReLineChart data={displayData}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
-            <XAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} interval={displayData.length > 20 ? 'preserveStartEnd' : 0} />
-            <YAxis stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
+            <XAxis {...commonXAxisProps} />
+            <YAxis {...commonYAxisProps} />
             <ChartTooltip content={<ChartTooltipContent />} />
             <ChartLegend content={<ChartLegendContent />} />
-            <Line type="monotone" dataKey={yAxisField} stroke={`var(--color-${yAxisField})`} name={yAxisField}/>
-            {yAxisField2 && yAxisField2 !== yAxisField && <Line type="monotone" dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} name={yAxisField2}/>}
+            <Line type="monotone" dataKey={yAxisField} stroke={`var(--color-${yAxisField})`} name={yAxisField.replace(/_/g, ' ')} connectNulls={true}/>
+            {yAxisField2 && yAxisField2 !== yAxisField && <Line type="monotone" dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} name={yAxisField2.replace(/_/g, ' ')} connectNulls={true}/>}
           </ReLineChart>
         );
       case 'area':
         return (
           <ReAreaChart data={displayData}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
-            <XAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} interval={displayData.length > 20 ? 'preserveStartEnd' : 0} />
-            <YAxis stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
+            <XAxis {...commonXAxisProps} />
+            <YAxis {...commonYAxisProps} />
             <ChartTooltip content={<ChartTooltipContent />} />
             <ChartLegend content={<ChartLegendContent />} />
-            <Area type="monotone" dataKey={yAxisField} stroke={`var(--color-${yAxisField})`} fill={`var(--color-${yAxisField})`} fillOpacity={0.4} name={yAxisField} />
-            {yAxisField2 && yAxisField2 !== yAxisField && <Area type="monotone" dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} fill={`var(--color-${yAxisField2})`} fillOpacity={0.4} name={yAxisField2} />}
+            <Area type="monotone" dataKey={yAxisField} stroke={`var(--color-${yAxisField})`} fill={`var(--color-${yAxisField})`} fillOpacity={0.4} name={yAxisField.replace(/_/g, ' ')} connectNulls={true}/>
+            {yAxisField2 && yAxisField2 !== yAxisField && <Area type="monotone" dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} fill={`var(--color-${yAxisField2})`} fillOpacity={0.4} name={yAxisField2.replace(/_/g, ' ')} connectNulls={true}/>}
           </ReAreaChart>
         );
       case 'pie':
         return (
           <RePieChart>
             <ChartTooltip content={<ChartTooltipContent />} />
-            <Pie data={displayData} dataKey={yAxisField} nameKey={xAxisField} cx="50%" cy="50%" outerRadius={Math.min(120, window.innerHeight / 5) } fill={`var(--color-${yAxisField})`} labelLine={false} label={({ percent }) => `${(percent * 100).toFixed(0)}%`} />
+            <Pie data={displayData} dataKey={yAxisField} nameKey={xAxisField} cx="50%" cy="50%" outerRadius={Math.min(120, window.innerHeight / 5) } fill={`var(--color-${yAxisField})`} labelLine={false} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} />
             <ChartLegend content={<ChartLegendContent wrapperStyle={{fontSize: '10px'}}/>} />
           </RePieChart>
         );
@@ -143,25 +198,24 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
         return (
           <ReScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
-            <XAxis type="category" dataKey={xAxisField} name={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} interval={displayData.length > 20 ? 'preserveStartEnd' : 0} />
-            <YAxis type="number" dataKey={yAxisField} name={yAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}}/>
-             {yAxisField2 && <YAxis yAxisId="right" type="number" dataKey={yAxisField2} name={yAxisField2} orientation="right" stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}}/>}
+            <XAxis type="category" {...commonXAxisProps} />
+            <YAxis type="number" dataKey={yAxisField} {...commonYAxisProps}/>
+            <YAxis yAxisId="right" type="number" dataKey={yAxisField2} name={yAxisField2.replace(/_/g, ' ')} orientation="right" stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}}/>
             <ChartTooltip content={<ChartTooltipContent />} cursor={{ strokeDasharray: '3 3' }}/>
             <ChartLegend content={<ChartLegendContent />} />
-            <Scatter name={yAxisField} data={displayData} fill={`var(--color-${yAxisField})`} />
-            {yAxisField2 && <Scatter yAxisId="right" name={yAxisField2} data={displayData} fill={`var(--color-${yAxisField2})`} />}
+            <Scatter name={yAxisField.replace(/_/g, ' ')} data={displayData} fill={`var(--color-${yAxisField})`} />
+            <Scatter yAxisId="right" name={yAxisField2.replace(/_/g, ' ')} data={displayData} fill={`var(--color-${yAxisField2})`} />
           </ReScatterChart>
         );
       case 'radar':
-         if (!yAxisField2) return <p className="text-muted-foreground text-center p-10">Radar chart often benefits from a second Y-axis field for comparison (Y-Axis 2), or ensure your X-axis has multiple categories.</p>;
          return (
-          <ReRadarChart cx="50%" cy="50%" outerRadius="70%" data={displayData.slice(0,6)}> 
+          <ReRadarChart cx="50%" cy="50%" outerRadius="70%" data={displayData}> 
             <PolarGrid stroke="hsl(var(--border)/0.5)" />
-            <PolarAngleAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
+            <PolarAngleAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} name={xAxisField.replace(/_/g, ' ')}/>
             <PolarRadiusAxis angle={30} domain={[0, 'auto']} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <ReRadar name={yAxisField} dataKey={yAxisField} stroke={`var(--color-${yAxisField})`} fill={`var(--color-${yAxisField})`} fillOpacity={0.6} />
-             {yAxisField2 && <ReRadar name={yAxisField2} dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} fill={`var(--color-${yAxisField2})`} fillOpacity={0.6} />}
+            <ReRadar name={yAxisField.replace(/_/g, ' ')} dataKey={yAxisField} stroke={`var(--color-${yAxisField})`} fill={`var(--color-${yAxisField})`} fillOpacity={0.6} />
+             {yAxisField2 && yAxisField2 !== yAxisField && <ReRadar name={yAxisField2.replace(/_/g, ' ')} dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} fill={`var(--color-${yAxisField2})`} fillOpacity={0.6} />}
             <ChartLegend content={<ChartLegendContent />} />
           </ReRadarChart>
         );
@@ -178,7 +232,7 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
     toast({ title: "Exporting Chart Data", description: "Chart data export to CSV started..." });
     
     const fieldsToExport = [xAxisField, yAxisField, yAxisField2].filter(Boolean) as string[];
-    const headerRow = fieldsToExport.join(',');
+    const headerRow = fieldsToExport.map(f => f.replace(/_/g, ' ')).join(',');
     const dataRows = displayData.map(row => 
       fieldsToExport.map(field => {
         let value = row[field];
@@ -193,7 +247,8 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", `${chartType}_chart_data.csv`);
+    const exportFileName = `${datasetIdentifier.replace(/[^a-z0-9]/gi, '_')}_${chartType}_chart_data.csv`;
+    link.setAttribute("download", exportFileName);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -210,7 +265,7 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
             <BarChart3 className="text-primary" />
             Visualize Your Data
           </CardTitle>
-          <CardDescription>Create various charts from your data with customizable options.</CardDescription>
+          <CardDescription>Create various charts. Upload data (CSV, XLS, or XLSX) to enable. CSV recommended for best results.</CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a CSV, XLS, or XLSX file in the 'Upload Data' section to use this feature. CSV is recommended for best results.</p>
@@ -226,7 +281,7 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
           <BarChart3 className="text-primary" />
           Visualize Your Data
         </CardTitle>
-        <CardDescription>Select chart type and fields to visualize. Displaying up to 100 data points for performance.</CardDescription>
+        <CardDescription>Select chart type and fields for {datasetIdentifier ? `"${datasetIdentifier}"` : "your data"}. Displaying up to 100 data points for most charts (less for Pie/Radar).</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-center">
@@ -248,34 +303,34 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
             </SelectContent>
           </Select>
           
-          <Select value={xAxisField} onValueChange={setXAxisField}>
+          <Select value={xAxisField} onValueChange={setXAxisField} disabled={xAxisOptions.length === 0}>
             <SelectTrigger className="w-full bg-input focus:bg-background">
               <SelectValue placeholder="Select X-Axis Field" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {xAxisOptions.length > 0 
                 ? xAxisOptions.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)
-                : <p className="p-2 text-xs text-muted-foreground text-center">No fields available</p>
+                : <p className="p-2 text-xs text-muted-foreground text-center">No suitable fields</p>
               }
             </SelectContent>
           </Select>
 
-          <Select value={yAxisField} onValueChange={setYAxisField}>
+          <Select value={yAxisField} onValueChange={setYAxisField} disabled={numericFields.length === 0}>
             <SelectTrigger className="w-full bg-input focus:bg-background">
               <SelectValue placeholder="Select Y-Axis Field (Numeric)" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
               {numericFields.length > 0 
                 ? numericFields.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)
-                : <p className="p-2 text-xs text-muted-foreground text-center">No numeric fields found</p>
+                : <p className="p-2 text-xs text-muted-foreground text-center">No numeric fields</p>
               }
             </SelectContent>
           </Select>
           
           <Select 
-            value={yAxisField2 || NO_FIELD_SELECTED_VALUE} // Use special value if yAxisField2 is undefined
+            value={yAxisField2 || NO_FIELD_SELECTED_VALUE} 
             onValueChange={(value) => setYAxisField2(value === NO_FIELD_SELECTED_VALUE ? undefined : value)} 
-            disabled={chartType === 'pie'}
+            disabled={chartType === 'pie' || numericFields.filter(f => f !== yAxisField).length === 0}
           >
             <SelectTrigger className="w-full bg-input focus:bg-background">
               <SelectValue placeholder="Y-Axis 2 (Optional, Numeric)" />
@@ -283,13 +338,12 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
             <SelectContent className="max-h-60">
               <SelectItem value={NO_FIELD_SELECTED_VALUE}>None</SelectItem>
               {numericFields.filter(f => f !== yAxisField).map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
-              {/* If numericFields is empty (excluding primary yAxisField), only "None" will effectively be shown */}
             </SelectContent>
           </Select>
 
         </div>
          <div className="flex justify-end">
-            <Button onClick={handleExport} className="w-full sm:w-auto bg-accent hover:bg-accent/90 text-accent-foreground" disabled={displayData.length === 0}>
+            <Button onClick={handleExport} className="w-full sm:w-auto bg-accent hover:bg-accent/90 text-accent-foreground" disabled={displayData.length === 0 || !xAxisField || !yAxisField}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" /> Export Chart Data
             </Button>
         </div>
@@ -314,5 +368,3 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
     </Card>
   );
 }
-
-    
