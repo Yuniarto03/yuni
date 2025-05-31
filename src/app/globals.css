@@ -62,4 +62,37 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Webkit (Chrome, Safari, Edge) scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 10px; /* Width of vertical scrollbar */
+    height: 10px; /* Height of horizontal scrollbar */
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--muted) / 0.2); /* Softer, more transparent track */
+    border-radius: 10px;
+    margin: 2px; /* Optional: adds a little space around the track */
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--accent) / 0.6); /* Accent color for the thumb, slightly more transparent */
+    border-radius: 10px;
+    border: 2px solid transparent; /* Creates a "padding" effect */
+    background-clip: content-box; /* Ensures border doesn't make thumb thicker */
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--accent) / 0.8); /* More opaque on hover */
+  }
+  
+  ::-webkit-scrollbar-corner {
+    background: transparent; /* Hides the corner piece where scrollbars meet */
+  }
+
+  /* Firefox scrollbar styling */
+  html { /* Apply to html for general effect, can be scoped more specifically */
+    scrollbar-width: auto; /* 'auto' or 'thin'. 'thin' uses a narrower scrollbar */
+    scrollbar-color: hsl(var(--accent) / 0.7) hsl(var(--muted) / 0.3); /* thumb track */
+  }
 }

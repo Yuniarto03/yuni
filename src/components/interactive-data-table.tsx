@@ -7,14 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
 import {
-  Table,
   TableHeader,
   TableBody,
   TableHead,
   TableRow,
   TableCell,
   TableCaption
-} from '@/components/ui/table';
+} from '@/components/ui/table'; // Keep using these sub-components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -146,9 +145,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
               </div>
             </div>
 
-            <div className="h-[60vh] w-full max-w-screen-xl mx-auto overflow-y-auto rounded-md border">
-              <Table>
-                <TableCaption>A view of {currentDatasetIdentifier}. Displaying {Math.min(filteredData.length, 100)} of {filteredData.length} matching rows (total {uploadedData.length} rows).</TableCaption>
+            <div className="h-[60vh] w-full max-w-screen-xl mx-auto overflow-auto rounded-md border">
+              <table className="w-full min-w-max caption-bottom text-sm">
                 <TableHeader>
                   <TableRow className="hover:bg-muted/20">
                     {currentVisibleColumns.map(key => (
@@ -169,8 +167,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                           <TableCell 
                             key={`cell-${rowIndex}-${key}-${cellIndex}`} 
                             className={cn(
-                              "whitespace-nowrap", // Default padding p-4 will apply
-                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" // 3rem is h-12 for header height
+                              "whitespace-nowrap", // Default padding p-4 will apply from base TableCell
+                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" // 3rem (h-12) is header height
                             )}
                           >
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
@@ -186,7 +184,10 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     </TableRow>
                   )}
                 </TableBody>
-              </Table>
+                 <TableCaption>
+                  A view of {currentDatasetIdentifier}. Displaying {Math.min(filteredData.length, 100)} of {filteredData.length} matching rows (total {uploadedData.length} rows).
+                </TableCaption>
+              </table>
                {filteredData.length > 100 && (
                 <p className="text-sm text-muted-foreground text-center py-2">Displaying first 100 matching rows. Export to see all data.</p>
               )}
