@@ -1,15 +1,16 @@
+
 "use client";
 
 import React, { useState, useMemo } from 'react';
-import { BarChart3D, PieChart, ScatterChart, Radar, AreaChart, LineChart as LineChartIcon, Settings2, Download, FileSpreadsheet } from 'lucide-react';
+import { BarChart3, PieChart, ScatterChart, Radar, AreaChart, LineChart as LineChartIcon, Settings2, Download, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Line, LineChart as ReLineChart, Pie, PieChart as RePieChart, Area, AreaChart as ReAreaChart, Scatter, ScatterChart as ReScatterChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, RadarChart as ReRadarChart, Radar as ReRadar } from 'recharts';
+import { Bar, BarChart as ReBarChart, CartesianGrid, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Line, LineChart as ReLineChart, Pie, PieChart as RePieChart, Area, AreaChart as ReAreaChart, Scatter, ScatterChart as ReScatterChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, RadarChart as ReRadarChart, Radar as ReRadar } from 'recharts';
 import { useToast } from '@/hooks/use-toast';
 
-type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar' | 'polar'; // No 3D bar chart
+type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar' | 'polar'; 
 
 const mockData = [
   { name: 'Jan', uv: 400, pv: 240, amt: 240 },
@@ -26,13 +27,13 @@ const chartConfig = {
 };
 
 const chartIcons: Record<ChartType, React.ElementType> = {
-  bar: BarChart3D, // Using this as a stand-in, though it's 2D
+  bar: BarChart3,
   line: LineChartIcon,
   area: AreaChart,
   pie: PieChart,
   scatter: ScatterChart,
   radar: Radar,
-  polar: Radar, // Using Radar icon for Polar as well
+  polar: Radar, 
 };
 
 export function DataVisualization() {
@@ -46,7 +47,7 @@ export function DataVisualization() {
     switch (chartType) {
       case 'bar':
         return (
-          <BarChart data={mockData}>
+          <ReBarChart data={mockData}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
             <XAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" />
             <YAxis stroke="hsl(var(--muted-foreground))" />
@@ -54,7 +55,7 @@ export function DataVisualization() {
             <ChartLegend content={<ChartLegendContent />} />
             <Bar dataKey={yAxisField} fill="var(--color-uv)" radius={4} />
             <Bar dataKey="pv" fill="var(--color-pv)" radius={4} />
-          </BarChart>
+          </ReBarChart>
         );
       case 'line':
         return (
@@ -112,10 +113,6 @@ export function DataVisualization() {
             <ChartLegend content={<ChartLegendContent />} />
           </ReRadarChart>
         );
-      // Polar chart is similar to Radar but can be used for different data representations.
-      // Recharts doesn't have a distinct "Polar" chart type in the same way as others.
-      // Often RadarChart is used, or a Pie chart for polar area representations.
-      // For now, using Radar as a placeholder for Polar.
       case 'polar':
          return (
           <ReRadarChart cx="50%" cy="50%" outerRadius="80%" data={mockData}>
@@ -135,7 +132,6 @@ export function DataVisualization() {
 
   const handleExport = () => {
     toast({ title: "Exporting Chart", description: "Chart data export to Excel started..." });
-    // Placeholder for actual export logic
     console.log("Exporting chart data:", mockData);
   };
 
@@ -143,7 +139,7 @@ export function DataVisualization() {
     <Card className="bg-card/80 backdrop-blur-sm shadow-xl">
       <CardHeader>
         <CardTitle className="font-headline text-2xl flex items-center gap-2">
-          <BarChart3D className="text-primary" /> {/* Using general icon */}
+          <BarChart3 className="text-primary" /> {/* Using general icon */}
           Visualize Your Data
         </CardTitle>
         <CardDescription>Create various charts from your data with customizable options.</CardDescription>
@@ -168,7 +164,6 @@ export function DataVisualization() {
             </SelectContent>
           </Select>
           
-          {/* Placeholder for axis/aggregation customization */}
           <Button variant="outline" disabled className="w-full sm:w-auto">
             <Settings2 className="mr-2 h-4 w-4" /> Customize Axes (Soon)
           </Button>
@@ -188,3 +183,5 @@ export function DataVisualization() {
     </Card>
   );
 }
+
+    

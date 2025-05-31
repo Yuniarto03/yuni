@@ -1,3 +1,4 @@
+
 import { SidebarProvider, Sidebar, SidebarInset, SidebarRail } from "@/components/ui/sidebar";
 import { SidebarNav } from "@/components/shared/sidebar-nav";
 import { PageHeader } from "@/components/shared/page-header";
@@ -9,7 +10,7 @@ import { AIInsights } from "@/components/ai-insights";
 import { ForecastAnalysis } from "@/components/forecast-analysis";
 import { DataVisualization } from "@/components/data-visualization";
 
-import { LayoutDashboard, UploadCloud, Table2, LayoutGrid, Brain, LineChart, BarChart3D } from "lucide-react";
+import { LayoutDashboard, UploadCloud, Table2, LayoutGrid, Brain, LineChart, BarChart3 } from "lucide-react";
 
 const sections = [
   { id: "dashboard", title: "Dashboard Overview", icon: LayoutDashboard, component: null, description: "Welcome to InsightFlow! Here's a quick overview." },
@@ -18,7 +19,7 @@ const sections = [
   { id: "data-summary", title: "Summarize Data", icon: LayoutGrid, component: DataSummarization, description: "Create dynamic pivot-table like summaries." },
   { id: "ai-insights", title: "AI Insights", icon: Brain, component: AIInsights, description: "Leverage AI to uncover insights from your data." },
   { id: "forecast-analysis", title: "Forecast Analysis", icon: LineChart, component: ForecastAnalysis, description: "Generate future projections based on your data." },
-  { id: "data-visualization", title: "Data Visualization", icon: BarChart3D, component: DataVisualization, description: "Create various charts to visualize your findings." },
+  { id: "data-visualization", title: "Data Visualization", icon: BarChart3, component: DataVisualization, description: "Create various charts to visualize your findings." },
 ];
 
 

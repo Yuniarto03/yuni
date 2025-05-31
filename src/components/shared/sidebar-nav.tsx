@@ -9,7 +9,7 @@ import {
   LayoutGrid,
   Brain,
   LineChart,
-  BarChart3D,
+  BarChart3, // Changed from BarChart3D
   Settings,
   Users
 } from 'lucide-react';
@@ -35,7 +35,7 @@ const navItems = [
   { href: '#data-summary', label: 'Summarize Data', icon: LayoutGrid },
   { href: '#ai-insights', label: 'AI Insights', icon: Brain },
   { href: '#forecast-analysis', label: 'Forecast', icon: LineChart },
-  { href: '#data-visualization', label: 'Visualize', icon: BarChart3D },
+  { href: '#data-visualization', label: 'Visualize', icon: BarChart3 }, // Changed from BarChart3D
 ];
 
 export function SidebarNav() {
