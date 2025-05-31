@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Table2, Search, Filter, FileSpreadsheet } from 'lucide-react';
+import { Table2, Search, Filter, FileSpreadsheet, CheckSquare, XSquare } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,7 +11,8 @@ import {
   DropdownMenuContent,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuCheckboxItem
+  DropdownMenuCheckboxItem,
+  DropdownMenuItem
 } from '@/components/ui/dropdown-menu';
 import {
   TableHeader,
@@ -28,7 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 interface InteractiveDataTableProps {
-  uploadedData: Record<string, any>[]; // Data values will now be primarily strings
+  uploadedData: Record<string, any>[]; 
   dataFields: string[];
   fileName: string | null;
   sheetName?: string | null;
@@ -90,7 +91,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     const dataRows = filteredData.map(row => 
       activeFields.map(field => {
         let value = row[field];
-        // All values are expected to be strings, if a value contains a comma, wrap it in quotes.
         if (typeof value === 'string' && value.includes(',')) {
           return `"${value}"`; 
         }
@@ -115,6 +115,22 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
   };
   
   const currentVisibleColumns = dataFields.filter(key => visibleColumns[key]);
+
+  const handleSelectAllColumns = () => {
+    const newVisibility: Record<DataKey, boolean> = {};
+    dataFields.forEach(key => {
+      newVisibility[key] = true;
+    });
+    setVisibleColumns(newVisibility);
+  };
+
+  const handleUnselectAllColumns = () => {
+    const newVisibility: Record<DataKey, boolean> = {};
+    dataFields.forEach(key => {
+      newVisibility[key] = false;
+    });
+    setVisibleColumns(newVisibility);
+  };
 
   return (
     <Card className="bg-card/80 backdrop-blur-sm shadow-xl">
@@ -185,6 +201,13 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                   <DropdownMenuContent align="end" className="w-56 max-h-96 overflow-y-auto">
                     <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={handleSelectAllColumns} className="cursor-pointer">
+                      <CheckSquare className="mr-2 h-4 w-4" /> Select All
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={handleUnselectAllColumns} className="cursor-pointer">
+                      <XSquare className="mr-2 h-4 w-4" /> Unselect All
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     {dataFields.map(key => (
                       <DropdownMenuCheckboxItem
                         key={key}
@@ -231,7 +254,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                             key={`cell-${rowIndex}-${key}-${cellIndex}`} 
                             className="whitespace-nowrap p-4 align-middle" 
                           >
-                            {/* Data is now primarily string, so String() ensures it's displayed as is */}
                             {String(item[key])}
                           </TableCell>
                         ))}
@@ -259,4 +281,3 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     </Card>
   );
 }
-
