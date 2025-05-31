@@ -13,7 +13,7 @@ import {
   TableRow,
   TableCell,
   TableCaption
-} from '@/components/ui/table'; // Keep using these sub-components
+} from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -166,10 +166,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                         {currentVisibleColumns.map((key, cellIndex) => (
                           <TableCell 
                             key={`cell-${rowIndex}-${key}-${cellIndex}`} 
-                            className={cn(
-                              "whitespace-nowrap", // Default padding p-4 will apply from base TableCell
-                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" // 3rem (h-12) is header height
-                            )}
+                            className="whitespace-nowrap"
                           >
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
                           </TableCell>
