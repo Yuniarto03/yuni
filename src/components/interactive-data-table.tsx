@@ -2,10 +2,17 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Table2, Search, Filter, FileSpreadsheet } from 'lucide-react';
+import { Table2, Search, Filter, FileSpreadsheet, Type, CaseSensitive } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem
+} from '@/components/ui/dropdown-menu';
 import {
   TableHeader,
   TableBody,
@@ -13,8 +20,10 @@ import {
   TableRow,
   TableCell,
   TableCaption
-} from '@/components/ui/table';
+} from '@/components/ui/table'; // Direct import of table parts
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -28,9 +37,26 @@ interface InteractiveDataTableProps {
 type DataItem = Record<string, any>;
 type DataKey = string;
 
+const fontFamilyOptions = [
+  { value: 'font-body', label: 'Rajdhani (Body)' },
+  { value: 'font-headline', label: 'Orbitron (Headline)' },
+  { value: 'font-sans', label: 'System Sans-Serif' },
+  { value: 'font-serif', label: 'System Serif' },
+  { value: 'font-mono', label: 'System Monospace' },
+];
+
+const fontSizeOptions = [
+  { value: 'text-xs', label: 'Extra Small' },
+  { value: 'text-sm', label: 'Small' },
+  { value: 'text-base', label: 'Medium' },
+  { value: 'text-lg', label: 'Large' },
+];
+
 export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheetName }: InteractiveDataTableProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [visibleColumns, setVisibleColumns] = useState<Record<DataKey, boolean>>({});
+  const [selectedFontFamily, setSelectedFontFamily] = useState<string>('font-body');
+  const [selectedFontSizeClass, setSelectedFontSizeClass] = useState<string>('text-sm');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -51,7 +77,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
   }, [uploadedData, searchTerm]);
 
   const currentDatasetIdentifier = fileName ? `${fileName}${sheetName ? ` (Sheet: ${sheetName})` : ''}` : "your data";
-
 
   const handleExport = () => {
     if (filteredData.length === 0) {
@@ -107,8 +132,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
           <p className="text-muted-foreground text-center py-10">No data uploaded or data is empty. Please upload a file in the 'Upload Data' section.</p>
         ) : (
           <>
-            <div className="flex flex-col sm:flex-row gap-4 mb-6 items-center">
-              <div className="relative w-full sm:max-w-xs">
+            <div className="flex flex-col sm:flex-row gap-4 mb-6 items-center flex-wrap">
+              <div className="relative w-full sm:w-auto sm:flex-grow-[2] sm:max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                 <Input
                   placeholder="Search table..."
@@ -117,10 +142,42 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                   className="pl-10 bg-input focus:bg-background"
                 />
               </div>
-              <div className="flex gap-2 ml-auto">
+              <div className="flex flex-wrap gap-2 items-center sm:ml-auto sm:flex-grow-[1]">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="fontFamilySelect" className="text-xs text-muted-foreground whitespace-nowrap">Font:</Label>
+                  <Select value={selectedFontFamily} onValueChange={setSelectedFontFamily}>
+                    <SelectTrigger id="fontFamilySelect" className="h-9 w-auto min-w-[140px] bg-input focus:bg-background text-xs">
+                      <SelectValue placeholder="Select Font" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fontFamilyOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value} className="text-xs">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="fontSizeSelect" className="text-xs text-muted-foreground whitespace-nowrap">Size:</Label>
+                  <Select value={selectedFontSizeClass} onValueChange={setSelectedFontSizeClass}>
+                    <SelectTrigger id="fontSizeSelect" className="h-9 w-auto min-w-[120px] bg-input focus:bg-background text-xs">
+                      <SelectValue placeholder="Select Size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fontSizeOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value} className="text-xs">
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
+                    <Button variant="outline" size="sm">
                       <Filter className="mr-2 h-4 w-4" /> Columns ({currentVisibleColumns.length}/{dataFields.length})
                     </Button>
                   </DropdownMenuTrigger>
@@ -139,20 +196,22 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <Button onClick={handleExport} className="bg-accent hover:bg-accent/90 text-accent-foreground" disabled={filteredData.length === 0}>
+                <Button onClick={handleExport} size="sm" className="bg-accent hover:bg-accent/90 text-accent-foreground" disabled={filteredData.length === 0}>
                   <FileSpreadsheet className="mr-2 h-4 w-4" /> Export View
                 </Button>
               </div>
             </div>
 
             <div className="h-[60vh] w-full max-w-screen-xl mx-auto overflow-auto rounded-md border">
-              <table className="w-full min-w-max caption-bottom text-sm">
+              <table className={cn("w-full min-w-max caption-bottom", selectedFontFamily, selectedFontSizeClass)}>
                 <TableHeader>
                   <TableRow className="hover:bg-muted/20">
                     {currentVisibleColumns.map(key => (
                       <TableHead 
                         key={`header-${key}`} 
-                        className="sticky top-0 z-10 bg-card whitespace-nowrap capitalize font-semibold text-foreground"
+                        className={cn(
+                          "sticky top-0 z-10 bg-card whitespace-nowrap capitalize font-semibold text-foreground h-12 px-4 text-left align-middle"
+                        )}
                       >
                         {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1')}
                       </TableHead>
@@ -162,11 +221,14 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                 <TableBody>
                   {filteredData.length > 0 ? (
                     filteredData.slice(0, 100).map((item, rowIndex) => ( 
-                      <TableRow key={`row-${rowIndex}-${fileName || 'nofile'}-${sheetName || 'nosheet'}-${item[dataFields[0]] || rowIndex}`} className="hover:bg-muted/10">
+                      <TableRow 
+                        key={`row-${rowIndex}-${fileName || 'nofile'}-${sheetName || 'nosheet'}-${item[dataFields[0]] || rowIndex}`} 
+                        className="hover:bg-muted/10"
+                      >
                         {currentVisibleColumns.map((key, cellIndex) => (
                           <TableCell 
                             key={`cell-${rowIndex}-${key}-${cellIndex}`} 
-                            className="whitespace-nowrap"
+                            className="whitespace-nowrap p-4 align-middle" 
                           >
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
                           </TableCell>
@@ -195,3 +257,4 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     </Card>
   );
 }
+
