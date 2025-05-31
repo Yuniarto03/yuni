@@ -38,12 +38,23 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
   };
 
   const processFile = useCallback((selectedFile: File) => {
-    if (selectedFile.type === 'text/csv' || selectedFile.name.endsWith('.csv')) {
+    const allowedExtensions = ['.csv', '.xls', '.xlsx'];
+    const fileExtension = selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase();
+
+    if (allowedExtensions.includes(fileExtension)) {
       setFile(selectedFile);
       setUploadStatus('idle');
       toast({ title: "File selected", description: selectedFile.name });
+      if (fileExtension === '.xls' || fileExtension === '.xlsx') {
+        toast({
+          title: "Excel File Selected",
+          description: "Parsing for .xls/.xlsx is basic and may not work for complex files. For best results, please convert to CSV. The system will attempt to process it.",
+          variant: "default",
+          duration: 7000, // Longer duration for this warning
+        });
+      }
     } else {
-      toast({ title: "Invalid file type", description: "Please upload a CSV file. Excel (.xlsx) is not yet supported.", variant: "destructive" });
+      toast({ title: "Invalid file type", description: "Please upload a CSV, XLS, or XLSX file.", variant: "destructive" });
       setFile(null);
     }
   }, [toast]);
@@ -68,13 +79,16 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
     const lines = csvText.split(/\r\n|\n/).filter(line => line.trim() !== '');
     if (lines.length === 0) return { data: [], fields: [] };
 
-    const headers = lines[0].split(',').map(header => header.trim());
+    // Basic CSV parsing, assumes comma delimiter.
+    // More robust parsing might be needed for Excel-like CSVs (e.g., handling quotes, other delimiters)
+    const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, '')); // Remove surrounding quotes
     const data = lines.slice(1).map(line => {
-      const values = line.split(',');
+      // This is a simplified CSV value parser. It doesn't handle complex cases
+      // like commas within quoted fields, or escaped quotes perfectly.
+      const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
       const entry: Record<string, any> = {};
       headers.forEach((header, index) => {
-        const value = values[index] ? values[index].trim() : '';
-        // Attempt to convert to number if possible
+        const value = values[index] || ''; // Ensure value exists
         if (value !== "" && !isNaN(Number(value))) {
           entry[header] = Number(value);
         } else {
@@ -102,25 +116,43 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
         setUploadProgress(progress);
       }
     };
-    reader.onloadend = () => { // Fired when the read is completed, successfully or not.
-        setUploadProgress(100); // Ensure progress hits 100 before parsing starts visually
+    reader.onloadend = () => { 
+        setUploadProgress(100);
     }
     reader.onload = (e) => {
       try {
-        const csvText = e.target?.result as string;
-        const { data, fields } = parseCSV(csvText);
-        if (fields.length === 0 || data.length === 0) {
-          toast({ title: "Parsing Error", description: "Could not parse CSV. Ensure it's valid and non-empty.", variant: "destructive" });
-          setUploadStatus('error');
-          setParsing(false);
-          return;
+        const fileContent = e.target?.result as string;
+        // The existing parseCSV function will be used.
+        // For XLS/XLSX, this will likely interpret the binary content as text, leading to garbled data or errors.
+        // A proper Excel parser would be needed here for robust handling.
+        const { data, fields } = parseCSV(fileContent); 
+        
+        if (fields.length === 0 && data.length === 0 && fileContent.length > 0) {
+            // This condition suggests parsing might have failed significantly for a non-empty file
+            toast({ title: "Parsing Issue", description: `Could not effectively parse ${file.name}. If it's an Excel file, try converting to CSV.`, variant: "destructive" });
+            setUploadStatus('error');
+            setParsing(false);
+            return;
         }
+         if (fields.length === 0 || (data.length === 0 && linesToExpectDataFrom(fileContent) > 1) ) {
+            // If there are no fields, or no data rows when we expected some (e.g. more than just a header row)
+            const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+            let errorDesc = "Could not parse the file. Ensure it's valid and non-empty.";
+            if (ext === '.xls' || ext === '.xlsx') {
+                errorDesc = `Could not properly parse ${file.name}. The current parser is optimized for CSV. Please try converting complex Excel files to CSV for best results.`;
+            }
+            toast({ title: "Parsing Error", description: errorDesc, variant: "destructive" });
+            setUploadStatus('error');
+            setParsing(false);
+            return;
+        }
+
         onDataUploaded(data, fields, file.name);
         setUploadStatus('success');
-        toast({ title: "Upload successful", description: `${file.name} has been processed.` });
+        toast({ title: "Processing complete", description: `${file.name} has been processed.` });
       } catch (error) {
-        console.error("Error parsing CSV:", error);
-        toast({ title: "Parsing Error", description: "An error occurred while parsing the CSV file.", variant: "destructive" });
+        console.error("Error parsing file:", error);
+        toast({ title: "Parsing Error", description: `An error occurred while processing ${file.name}. It might be an unsupported format or corrupted.`, variant: "destructive" });
         setUploadStatus('error');
       } finally {
         setParsing(false);
@@ -131,8 +163,15 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
       setUploadStatus('error');
       setParsing(false);
     };
-    reader.readAsText(file);
+    // For XLS/XLSX, readAsText will read the binary content as text.
+    // A library approach would use readAsArrayBuffer or similar then pass to the library.
+    reader.readAsText(file); 
   };
+
+  // Helper to check if we should expect data rows based on lines
+  const linesToExpectDataFrom = (content: string) => {
+    return content.split(/\r\n|\n/).filter(line => line.trim() !== '').length;
+  }
 
   return (
     <Card className="bg-card/80 backdrop-blur-sm shadow-xl">
@@ -141,7 +180,7 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
           <UploadCloud className="text-primary" />
           Upload Your Data
         </CardTitle>
-        <CardDescription>Upload a CSV file to begin analysis. Ensure the first row contains headers. (Max 5MB)</CardDescription>
+        <CardDescription>Upload a CSV, XLS, or XLSX file to begin analysis. Ensure the first row contains headers. Parsing for XLS/XLSX is basic; CSV is recommended for complex files.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div
@@ -156,14 +195,14 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
         >
           <UploadCloud className={`w-16 h-16 mb-4 ${dragging ? 'text-primary' : file && uploadStatus !== 'error' ? 'text-green-500' : 'text-muted-foreground'}`} />
           <p className="text-lg font-semibold mb-1">
-            {dragging ? 'Drop your CSV file here' : file ? file.name : 'Drag & drop CSV file'}
+            {dragging ? 'Drop your file here' : file ? file.name : 'Drag & drop CSV, XLS, XLSX file'}
           </p>
-          <p className="text-sm text-muted-foreground">or click to browse (max 5MB)</p>
+          <p className="text-sm text-muted-foreground">or click to browse</p>
           <input
             type="file"
             id="fileUpload"
             className="hidden"
-            accept=".csv"
+            accept=".csv,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={handleFileChange}
           />
           <Button variant="outline" size="sm" className="mt-4" onClick={() => document.getElementById('fileUpload')?.click()} disabled={parsing || uploadStatus === 'uploading'}>
@@ -186,7 +225,7 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
 
         {(uploadStatus === 'uploading' || parsing) && uploadProgress < 100 && (
           <div className="space-y-2">
-            <p className="text-sm text-center">{uploadStatus === 'uploading' && !parsing ? `Reading ${file?.name}...` : `Parsing ${file?.name}...`}</p>
+            <p className="text-sm text-center">{uploadStatus === 'uploading' && !parsing ? `Reading ${file?.name}...` : `Processing ${file?.name}...`}</p>
             <Progress value={uploadProgress} className="w-full [&>div]:bg-primary" />
           </div>
         )}
