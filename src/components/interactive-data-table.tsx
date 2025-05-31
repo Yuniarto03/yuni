@@ -169,8 +169,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                           <TableCell 
                             key={`cell-${rowIndex}-${key}-${cellIndex}`} 
                             className={cn(
-                              "whitespace-nowrap",
-                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" // 3rem is h-12 for header
+                              "whitespace-nowrap", // Default padding p-4 will apply
+                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" // 3rem is h-12 for header height
                             )}
                           >
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
