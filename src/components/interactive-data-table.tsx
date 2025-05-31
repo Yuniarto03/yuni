@@ -63,7 +63,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
   const [selectedFontSizeClass, setSelectedFontSizeClass] = useState<string>('text-sm');
   const { toast } = useToast();
 
-  // State for content filters
   const [activeContentFilters, setActiveContentFilters] = useState<Record<DataKey, Set<string>>>({});
   const [uniqueColumnValuesWithCounts, setUniqueColumnValuesWithCounts] = useState<Record<DataKey, { value: string; count: number }[]>>({});
 
@@ -78,7 +77,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     setActiveContentFilters(initialContentFilters);
   }, [dataFields]);
 
-  // Calculate unique values for content filters based on visible columns, search term, and OTHER active content filters
   useEffect(() => {
     if (uploadedData.length === 0) {
       setUniqueColumnValuesWithCounts({});
@@ -88,7 +86,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     const newUniqueValues: Record<DataKey, { value: string; count: number }[]> = {};
     const currentVisibleKeys = dataFields.filter(key => visibleColumns[key]);
 
-    // 1. Filter by global search term (on visible columns)
     let dataAfterSearch = uploadedData;
     if (searchTerm) {
       dataAfterSearch = uploadedData.filter(item =>
@@ -98,27 +95,19 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
       );
     }
 
-    // For each visible column (targetColumnKey), calculate its unique values and their counts
-    // considering filters from *other* columns.
     currentVisibleKeys.forEach(targetColumnKey => {
       const valueMap = new Map<string, number>();
-
-      // Filter data based on active filters in *other* columns
       const dataFilteredByOtherColumns = dataAfterSearch.filter(item => {
         return currentVisibleKeys.every(filterColumnKey => {
-          // When calculating counts for targetColumnKey, don't apply its own active filter.
-          // Apply filters from all *other* columns.
-          if (filterColumnKey === targetColumnKey) return true; 
-
+          if (filterColumnKey === targetColumnKey) return true;
           const selectedValues = activeContentFilters[filterColumnKey];
           if (!selectedValues || selectedValues.size === 0) {
-            return true; // No filter active for this other column
+            return true;
           }
           return selectedValues.has(String(item[filterColumnKey]));
         });
       });
 
-      // Now, count unique values for the targetColumnKey from this further filtered data
       dataFilteredByOtherColumns.forEach(item => {
         const val = String(item[targetColumnKey]);
         valueMap.set(val, (valueMap.get(val) || 0) + 1);
@@ -139,7 +128,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
 
     const currentVisibleKeys = dataFields.filter(key => visibleColumns[key]);
 
-    // 1. Filter by global search term (on visible columns)
     let dataAfterSearch = uploadedData;
     if (searchTerm) {
       dataAfterSearch = uploadedData.filter(item =>
@@ -149,12 +137,11 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
       );
     }
 
-    // 2. Filter by active content filters
     const contentFilteredData = dataAfterSearch.filter(item => {
       return currentVisibleKeys.every(key => {
         const selectedValues = activeContentFilters[key];
         if (!selectedValues || selectedValues.size === 0) {
-          return true; // No filter active for this column
+          return true;
         }
         return selectedValues.has(String(item[key]));
       });
@@ -333,27 +320,29 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64 max-h-96">
-                    <ScrollArea className="h-full max-h-80"> 
-                        <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={handleSelectAllColumns} className="cursor-pointer">
-                        <CheckSquare className="mr-2 h-4 w-4" /> Select All
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={handleUnselectAllColumns} className="cursor-pointer">
-                        <XSquare className="mr-2 h-4 w-4" /> Unselect All
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        {dataFields.map(key => (
-                        <DropdownMenuCheckboxItem
-                            key={key}
-                            checked={visibleColumns[key] || false}
-                            onCheckedChange={(checked) => handleColumnVisibilityChange(key, !!checked)}
-                            className="capitalize"
-                        >
-                            {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1')}
-                        </DropdownMenuCheckboxItem>
-                        ))}
-                    </ScrollArea>
+                      <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={handleSelectAllColumns} className="cursor-pointer">
+                      <CheckSquare className="mr-2 h-4 w-4" /> Select All
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={handleUnselectAllColumns} className="cursor-pointer">
+                      <XSquare className="mr-2 h-4 w-4" /> Unselect All
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <ScrollArea className="max-h-80"> {/* Max height for the scrollable list of columns */}
+                        <div className="px-1"> {/* Add padding if ScrollArea children need it, usually items have their own */}
+                          {dataFields.map(key => (
+                          <DropdownMenuCheckboxItem
+                              key={key}
+                              checked={visibleColumns[key] || false}
+                              onCheckedChange={(checked) => handleColumnVisibilityChange(key, !!checked)}
+                              className="capitalize"
+                          >
+                              {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1')}
+                          </DropdownMenuCheckboxItem>
+                          ))}
+                        </div>
+                      </ScrollArea>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -421,19 +410,19 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
 
             <div className="h-[60vh] w-full max-w-screen-xl mx-auto overflow-auto rounded-md border">
               <table className={cn("w-full min-w-max caption-bottom", selectedFontFamily, selectedFontSizeClass)}>
-                <TableHeader>
+                <TableHeader className="sticky top-0 z-10 bg-card">
                   <TableRow className="hover:bg-muted/20">
                     {currentVisibleColumnKeys.map(key => (
                       <TableHead
                         key={`header-${key}`}
                         className={cn(
-                          "sticky top-0 z-10 bg-card whitespace-nowrap capitalize font-semibold text-foreground h-12 px-4 text-left align-middle"
+                           "whitespace-nowrap capitalize font-semibold text-foreground h-12 px-4 text-left align-middle"
                         )}
                       >
                         {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1')}
                       </TableHead>
                     ))}
-                     {currentVisibleColumnKeys.length === 0 && <TableHead className="sticky top-0 z-10 bg-card h-12 px-4 text-left align-middle">No columns selected</TableHead>}
+                     {currentVisibleColumnKeys.length === 0 && <TableHead className="h-12 px-4 text-left align-middle">No columns selected</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -461,7 +450,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     </TableRow>
                   )}
                 </TableBody>
-                 <TableCaption>
+                 <TableCaption className="sticky bottom-0 bg-card/80 backdrop-blur-sm py-2">
                   A view of {currentDatasetIdentifier}. Displaying {Math.min(filteredData.length, 100)} of {filteredData.length} matching rows (total {uploadedData.length} rows).
                 </TableCaption>
               </table>
@@ -475,3 +464,5 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     </Card>
   );
 }
+
+    
