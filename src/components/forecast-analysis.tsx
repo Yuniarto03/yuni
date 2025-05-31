@@ -28,11 +28,6 @@ const defaultChartData = [
   { month: "Jun", actual: 0, forecast: 0 },
 ];
 
-const chartConfigBase = {
-  actual: { label: "Actual", color: "hsl(var(--chart-1))" },
-  forecast: { label: "Forecast", color: "hsl(var(--chart-2))" },
-};
-
 export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisProps) {
   const [forecastHorizon, setForecastHorizon] = useState<ForecastHorizon>('monthly');
   const [forecastNarrative, setForecastNarrative] = useState('');
@@ -115,12 +110,9 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
       try {
         const parsedChartData = JSON.parse(output.chartData);
         if (Array.isArray(parsedChartData) && parsedChartData.length > 0 && dateField && valueField) {
-          // Ensure keys match what chart expects, e.g., 'month', 'actual', 'forecast'
-          // The AI needs to return data with keys like { [dateField]: "some date", [valueField]: 123, "forecast": 456 }
-          // For simplicity, let's assume AI returns data with 'date', 'actual', 'forecast' keys
            setChartData(parsedChartData.map(d => ({
-            [dateField]: d.date || d[dateField], // AI should provide date key
-            [valueField]: d.actual || d[valueField], // AI should provide actual value key
+            [dateField]: d.date || d[dateField], 
+            [valueField]: d.actual || d[valueField], 
             forecast: d.forecast
           })));
         } else {
@@ -129,7 +121,6 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
       } catch (e) {
         console.warn("AI returned non-JSON or invalid chart data. Raw data:", output.chartData, "Error:", e);
         toast({title: "Chart Data Issue", description: "AI returned chart data that couldn't be parsed or used. Displaying placeholder.", variant: "default"});
-        // Simulate new forecast data for placeholder
         const newForecastData = uploadedData.slice(0, 20).map(d => ({
             [dateField]: d[dateField],
             [valueField]: d[valueField],
@@ -184,7 +175,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
           <CardDescription>Generate monthly, quarterly, or yearly forecasts for your data.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a CSV file in the 'Upload Data' section to use this feature.</p>
+          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a file in the 'Upload Data' section to use this feature.</p>
         </CardContent>
       </Card>
     );
@@ -221,7 +212,9 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
               <SelectValue placeholder="Select Date/Time Field" />
             </SelectTrigger>
             <SelectContent>
-              {dateLikeFields.length > 0 ? dateLikeFields.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>) : <SelectItem value="" disabled>No date-like fields found</SelectItem>}
+              {dateLikeFields.length > 0 
+                ? dateLikeFields.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>) 
+                : <p className="p-2 text-xs text-muted-foreground text-center">No date-like fields found</p>}
             </SelectContent>
           </Select>
 
@@ -230,7 +223,9 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
               <SelectValue placeholder="Select Value Field (Numeric)" />
             </SelectTrigger>
             <SelectContent>
-              {numericFields.length > 0 ? numericFields.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>) : <SelectItem value="" disabled>No numeric fields found</SelectItem>}
+              {numericFields.length > 0 
+                ? numericFields.map(f => <SelectItem key={f} value={f}>{f}</SelectItem>) 
+                : <p className="p-2 text-xs text-muted-foreground text-center">No numeric fields found</p>}
             </SelectContent>
           </Select>
         </div>
@@ -267,7 +262,7 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
                 <XAxis 
                     dataKey={dateField} 
                     stroke="hsl(var(--muted-foreground))" 
-                    tickFormatter={(tick) => typeof tick === 'string' && tick.includes('-') ? tick.split('-')[1]+'/'+tick.split('-')[0].slice(-2) : tick } // Basic date formatting M/YY
+                    tickFormatter={(tick) => typeof tick === 'string' && tick.includes('-') ? tick.split('-')[1]+'/'+tick.split('-')[0].slice(-2) : tick } 
                 />
                 <YAxis dataKey={valueField} stroke="hsl(var(--muted-foreground))" />
                 <ChartTooltip content={<ChartTooltipContent />} />
@@ -299,3 +294,5 @@ export function ForecastAnalysis({ uploadedData, dataFields }: ForecastAnalysisP
     </Card>
   );
 }
+
+    

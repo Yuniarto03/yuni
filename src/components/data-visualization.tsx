@@ -27,6 +27,8 @@ const chartIcons: Record<ChartType, React.ElementType> = {
   radar: RadarIcon,
 };
 
+const NO_FIELD_SELECTED_VALUE = "__NONE_FIELD_SELECTION__";
+
 export function DataVisualization({ uploadedData, dataFields }: DataVisualizationProps) {
   const [chartType, setChartType] = useState<ChartType>('bar');
   const [xAxisField, setXAxisField] = useState<string | undefined>(undefined);
@@ -41,18 +43,19 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
 
   const categoricalFields = useMemo(() => {
      if (uploadedData.length === 0) return [];
-    // Consider fields as categorical if they are not purely numeric or have a limited number of unique string values
     return dataFields.filter(field => {
-        if (typeof uploadedData[0][field] === 'number' && uploadedData.every(d => typeof d[field] === 'number')) return false; // Exclude purely numeric
+        if (typeof uploadedData[0][field] === 'number' && uploadedData.every(d => typeof d[field] === 'number')) return false; 
         const uniqueValues = new Set(uploadedData.map(d => d[field]));
-        return uniqueValues.size <= 50 || typeof uploadedData[0][field] === 'string'; // Heuristic for categorical
+        return uniqueValues.size <= 50 || typeof uploadedData[0][field] === 'string'; 
     });
   }, [uploadedData, dataFields]);
+
+  const xAxisOptions = useMemo(() => categoricalFields.length > 0 ? categoricalFields : dataFields, [categoricalFields, dataFields]);
 
 
   useEffect(() => {
     if (dataFields.length > 0) {
-      setXAxisField(categoricalFields[0] || dataFields[0]);
+      setXAxisField(xAxisOptions[0] || dataFields[0]);
       setYAxisField(numericFields[0] || undefined);
       setYAxisField2(numericFields[1] || undefined);
     } else {
@@ -60,7 +63,7 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
       setYAxisField(undefined);
       setYAxisField2(undefined);
     }
-  }, [dataFields, numericFields, categoricalFields]);
+  }, [dataFields, numericFields, xAxisOptions]);
 
   const chartConfig = useMemo(() => {
     const config: Record<string, {label: string, color: string}> = {};
@@ -70,7 +73,6 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
   }, [yAxisField, yAxisField2]);
 
   const displayData = useMemo(() => {
-    // For Pie chart, aggregate data if needed or use raw if appropriate
     if (chartType === 'pie' && xAxisField && yAxisField && uploadedData.length > 0) {
         const aggregated: Record<string, number> = {};
         uploadedData.forEach(item => {
@@ -80,9 +82,9 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
                 aggregated[category] = (aggregated[category] || 0) + value;
             }
         });
-        return Object.entries(aggregated).map(([name, value]) => ({ [xAxisField]: name, [yAxisField]: value })).slice(0,10); // Max 10 slices for pie
+        return Object.entries(aggregated).map(([name, value]) => ({ [xAxisField]: name, [yAxisField]: value })).slice(0,10);
     }
-    return uploadedData.slice(0, 100); // Limit data points for performance in general charts
+    return uploadedData.slice(0, 100); 
   }, [uploadedData, chartType, xAxisField, yAxisField]);
 
 
@@ -153,7 +155,7 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
       case 'radar':
          if (!yAxisField2) return <p className="text-muted-foreground text-center p-10">Radar chart often benefits from a second Y-axis field for comparison (Y-Axis 2), or ensure your X-axis has multiple categories.</p>;
          return (
-          <ReRadarChart cx="50%" cy="50%" outerRadius="70%" data={displayData.slice(0,6)}> {/* Radar typically shows fewer items */}
+          <ReRadarChart cx="50%" cy="50%" outerRadius="70%" data={displayData.slice(0,6)}> 
             <PolarGrid stroke="hsl(var(--border)/0.5)" />
             <PolarAngleAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
             <PolarRadiusAxis angle={30} domain={[0, 'auto']} stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} />
@@ -251,9 +253,10 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
               <SelectValue placeholder="Select X-Axis Field" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
-              {categoricalFields.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
-              {categoricalFields.length === 0 && dataFields.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
-               {dataFields.length === 0 && <SelectItem value="" disabled>No fields available</SelectItem>}
+              {xAxisOptions.length > 0 
+                ? xAxisOptions.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)
+                : <p className="p-2 text-xs text-muted-foreground text-center">No fields available</p>
+              }
             </SelectContent>
           </Select>
 
@@ -262,19 +265,25 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
               <SelectValue placeholder="Select Y-Axis Field (Numeric)" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
-              {numericFields.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
-              {numericFields.length === 0 && <SelectItem value="" disabled>No numeric fields found</SelectItem>}
+              {numericFields.length > 0 
+                ? numericFields.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)
+                : <p className="p-2 text-xs text-muted-foreground text-center">No numeric fields found</p>
+              }
             </SelectContent>
           </Select>
           
-          <Select value={yAxisField2} onValueChange={setYAxisField2} disabled={chartType === 'pie'}>
+          <Select 
+            value={yAxisField2 || NO_FIELD_SELECTED_VALUE} // Use special value if yAxisField2 is undefined
+            onValueChange={(value) => setYAxisField2(value === NO_FIELD_SELECTED_VALUE ? undefined : value)} 
+            disabled={chartType === 'pie'}
+          >
             <SelectTrigger className="w-full bg-input focus:bg-background">
               <SelectValue placeholder="Y-Axis 2 (Optional, Numeric)" />
             </SelectTrigger>
             <SelectContent className="max-h-60">
-              <SelectItem value="">None</SelectItem>
+              <SelectItem value={NO_FIELD_SELECTED_VALUE}>None</SelectItem>
               {numericFields.filter(f => f !== yAxisField).map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
-               {numericFields.length === 0 && <SelectItem value="" disabled>No numeric fields found</SelectItem>}
+              {/* If numericFields is empty (excluding primary yAxisField), only "None" will effectively be shown */}
             </SelectContent>
           </Select>
 
@@ -305,3 +314,5 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
     </Card>
   );
 }
+
+    
