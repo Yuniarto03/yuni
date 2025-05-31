@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Table2, Search, Filter, FileSpreadsheet, CheckSquare, XSquare, ChevronDown, Palette, Baseline, ListFilter } from 'lucide-react';
+import { Table2, Search, Filter, FileSpreadsheet, CheckSquare, XSquare, Palette, ListFilter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,36 +78,60 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     setActiveContentFilters(initialContentFilters);
   }, [dataFields]);
 
-  // Calculate unique values for content filters based on visible columns and search term
+  // Calculate unique values for content filters based on visible columns, search term, and OTHER active content filters
   useEffect(() => {
     if (uploadedData.length === 0) {
       setUniqueColumnValuesWithCounts({});
       return;
     }
 
+    const newUniqueValues: Record<DataKey, { value: string; count: number }[]> = {};
     const currentVisibleKeys = dataFields.filter(key => visibleColumns[key]);
 
-    const dataAfterSearch = uploadedData.filter(item => {
-      if (!searchTerm) return true;
-      return currentVisibleKeys.some(key =>
-        String(item[key]).toLowerCase().includes(searchTerm.toLowerCase())
+    // 1. Filter by global search term (on visible columns)
+    let dataAfterSearch = uploadedData;
+    if (searchTerm) {
+      dataAfterSearch = uploadedData.filter(item =>
+        currentVisibleKeys.some(key =>
+          String(item[key]).toLowerCase().includes(searchTerm.toLowerCase())
+        )
       );
-    });
+    }
 
-    const newUniqueValues: Record<DataKey, { value: string; count: number }[]> = {};
-    currentVisibleKeys.forEach(key => {
+    // For each visible column (targetColumnKey), calculate its unique values and their counts
+    // considering filters from *other* columns.
+    currentVisibleKeys.forEach(targetColumnKey => {
       const valueMap = new Map<string, number>();
-      dataAfterSearch.forEach(item => {
-        const val = String(item[key]);
+
+      // Filter data based on active filters in *other* columns
+      const dataFilteredByOtherColumns = dataAfterSearch.filter(item => {
+        return currentVisibleKeys.every(filterColumnKey => {
+          // When calculating counts for targetColumnKey, don't apply its own active filter.
+          // Apply filters from all *other* columns.
+          if (filterColumnKey === targetColumnKey) return true; 
+
+          const selectedValues = activeContentFilters[filterColumnKey];
+          if (!selectedValues || selectedValues.size === 0) {
+            return true; // No filter active for this other column
+          }
+          return selectedValues.has(String(item[filterColumnKey]));
+        });
+      });
+
+      // Now, count unique values for the targetColumnKey from this further filtered data
+      dataFilteredByOtherColumns.forEach(item => {
+        const val = String(item[targetColumnKey]);
         valueMap.set(val, (valueMap.get(val) || 0) + 1);
       });
-      newUniqueValues[key] = Array.from(valueMap.entries())
+
+      newUniqueValues[targetColumnKey] = Array.from(valueMap.entries())
         .map(([value, count]) => ({ value, count }))
         .sort((a, b) => a.value.localeCompare(b.value));
     });
+
     setUniqueColumnValuesWithCounts(newUniqueValues);
 
-  }, [uploadedData, dataFields, visibleColumns, searchTerm]);
+  }, [uploadedData, dataFields, visibleColumns, searchTerm, activeContentFilters]);
 
 
   const filteredData = useMemo(() => {
@@ -152,7 +176,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     const headerRow = activeFields.join(',');
     const dataRows = filteredData.map(row =>
       activeFields.map(field => {
-        let value = String(row[field]); // Ensure it's a string
+        let value = String(row[field]); 
         if (value.includes(',')) {
           return `"${value}"`;
         }
@@ -191,7 +215,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     const newContentFilters: Record<DataKey, Set<string>> = { ...activeContentFilters };
     dataFields.forEach(key => {
       newVisibility[key] = false;
-      newContentFilters[key] = new Set(); // Clear content filters for hidden columns
+      newContentFilters[key] = new Set(); 
     });
     setVisibleColumns(newVisibility);
     setActiveContentFilters(newContentFilters);
@@ -200,8 +224,11 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
   const handleColumnVisibilityChange = (key: DataKey, checked: boolean) => {
     setVisibleColumns(prev => ({ ...prev, [key]: checked }));
     if (!checked) {
-      // If column is hidden, clear its content filter
-      setActiveContentFilters(prev => ({ ...prev, [key]: new Set() }));
+      setActiveContentFilters(prev => {
+        const newFilters = { ...prev };
+        newFilters[key] = new Set();
+        return newFilters;
+      });
     }
   };
 
@@ -220,7 +247,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
   };
 
   const handleSelectAllContentValues = (columnKey: DataKey) => {
-    const allValues = new Set(uniqueColumnValuesWithCounts[columnKey]?.map(uv => uv.value) || []);
+    const allValues = new Set(uniqueColumnValuesWithCounts[columnKey]?.filter(uv => uv.count > 0).map(uv => uv.value) || []);
     setActiveContentFilters(prev => ({ ...prev, [columnKey]: allValues }));
   };
 
@@ -259,7 +286,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                 />
               </div>
               <div className="flex flex-wrap gap-2 items-center sm:ml-auto sm:flex-grow-[1]">
-                {/* Font and Size Selectors */}
                  <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" size="sm" className="h-9">
@@ -307,7 +333,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64 max-h-96">
-                    <ScrollArea className="h-full max-h-80"> {/* Added ScrollArea here */}
+                    <ScrollArea className="h-full max-h-80"> 
                         <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={handleSelectAllColumns} className="cursor-pointer">
@@ -331,7 +357,6 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Content Filter Dropdown */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-9">
@@ -341,8 +366,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-80 max-h-[70vh] p-0">
                      <Accordion type="multiple" className="w-full">
-                        {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.length > 0).map(columnKey => {
-                            const uniqueValues = uniqueColumnValuesWithCounts[columnKey] || [];
+                        {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.some(uv => uv.count > 0)).map(columnKey => {
+                            const uniqueValues = uniqueColumnValuesWithCounts[columnKey]?.filter(uv => uv.count > 0) || [];
                             const activeFiltersInColumn = activeContentFilters[columnKey]?.size || 0;
                             return (
                             <AccordionItem value={columnKey} key={columnKey}>
@@ -355,7 +380,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                                 <AccordionContent className="pb-0">
                                     <div className="p-2 border-t">
                                     <div className="flex justify-between mb-2">
-                                        <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleSelectAllContentValues(columnKey)}>Select All</Button>
+                                        <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleSelectAllContentValues(columnKey)}>Select All Visible ({uniqueValues.length})</Button>
                                         <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleUnselectAllContentValues(columnKey)}>Unselect All</Button>
                                     </div>
                                     <ScrollArea className="h-48">
@@ -365,13 +390,13 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                                             <Checkbox
                                                 checked={activeContentFilters[columnKey]?.has(value) || false}
                                                 onCheckedChange={(checked) => handleContentFilterChange(columnKey, value, !!checked)}
-                                                id={`content-filter-${columnKey}-${value}`}
+                                                id={`content-filter-${columnKey}-${value.replace(/\s+/g, '-')}`}
                                             />
                                             <span className="flex-grow truncate" title={value}>{value || "(empty)"}</span>
                                             <span className="text-muted-foreground">({count})</span>
                                             </Label>
                                         ))}
-                                        {uniqueValues.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No unique values found or data is empty after search.</p>}
+                                        {uniqueValues.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No filterable values with current criteria.</p>}
                                         </div>
                                     </ScrollArea>
                                     </div>
@@ -379,9 +404,9 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                             </AccordionItem>
                             );
                         })}
-                        {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.length > 0).length === 0 && (
+                        {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.some(uv => uv.count > 0)).length === 0 && (
                             <div className="p-4 text-sm text-muted-foreground text-center">
-                                No columns with filterable content available. Try adjusting the global search or column visibility.
+                                No columns with filterable content for current criteria.
                             </div>
                         )}
                      </Accordion>
@@ -450,6 +475,3 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     </Card>
   );
 }
-
-
-    
