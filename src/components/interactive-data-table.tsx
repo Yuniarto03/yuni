@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { Table2, Search, Filter, FileSpreadsheet, Type, CaseSensitive } from 'lucide-react';
+import { Table2, Search, Filter, FileSpreadsheet } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,7 +20,7 @@ import {
   TableRow,
   TableCell,
   TableCaption
-} from '@/components/ui/table'; // Direct import of table parts
+} from '@/components/ui/table'; 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
@@ -28,7 +28,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 interface InteractiveDataTableProps {
-  uploadedData: Record<string, any>[];
+  uploadedData: Record<string, any>[]; // Data values will now be primarily strings
   dataFields: string[];
   fileName: string | null;
   sheetName?: string | null;
@@ -90,6 +90,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     const dataRows = filteredData.map(row => 
       activeFields.map(field => {
         let value = row[field];
+        // All values are expected to be strings, if a value contains a comma, wrap it in quotes.
         if (typeof value === 'string' && value.includes(',')) {
           return `"${value}"`; 
         }
@@ -230,7 +231,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                             key={`cell-${rowIndex}-${key}-${cellIndex}`} 
                             className="whitespace-nowrap p-4 align-middle" 
                           >
-                            {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
+                            {/* Data is now primarily string, so String() ensures it's displayed as is */}
+                            {String(item[key])}
                           </TableCell>
                         ))}
                       </TableRow>

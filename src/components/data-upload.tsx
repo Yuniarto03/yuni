@@ -135,11 +135,12 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
     if (lines.length === 0) return { data: [], fields: [] };
     const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
     const data = lines.slice(1).map(line => {
+      // Regex to split CSV by comma, but not if comma is inside quotes
       const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
       const entry: Record<string, any> = {};
       headers.forEach((header, index) => {
-        const value = values[index] || '';
-        entry[header] = (value !== "" && !isNaN(Number(value))) ? Number(value) : value;
+        // Store all CSV values as strings
+        entry[header] = values[index] || '';
       });
       return entry;
     });
@@ -193,18 +194,33 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
           const worksheet = workbook.Sheets[selectedSheetName];
           // Use {header: 1} to get an array of arrays, then process headers.
           // Use defval: '' to ensure empty cells are read as empty strings not undefined.
-          const jsonDataRaw = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, blankrows: false, defval: '' });
+          // raw: false ensures dates are parsed as JS dates, but we'll stringify them.
+          // cellStyles: false and other options can be explored for performance if needed.
+          const jsonDataRaw = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, blankrows: false, defval: '', raw: false });
           
           if (jsonDataRaw.length === 0) {
             parsedFields = [];
             parsedData = [];
           } else {
-            parsedFields = jsonDataRaw[0].map(String); // First row as headers
+            parsedFields = jsonDataRaw[0].map(String); // First row as headers, ensure string
             parsedData = jsonDataRaw.slice(1).map(rowArray => {
               const rowObject: Record<string, any> = {};
               parsedFields.forEach((header, index) => {
                 const value = rowArray[index];
-                rowObject[header] = (value !== "" && value !== null && !isNaN(Number(value))) ? Number(value) : value;
+                // Store all Excel values as strings. Handle null/undefined as empty string.
+                // XLSX with raw:false might return Date objects for dates; convert to ISO string or desired string format.
+                if (value instanceof Date) {
+                   // Format date as YYYY-MM-DD HH:MM:SS or as desired
+                   // For simplicity, using ISO string, can be customized.
+                   // Check if it's a date-only or date-time by checking if time part is zero.
+                   if (value.getHours() === 0 && value.getMinutes() === 0 && value.getSeconds() === 0 && value.getMilliseconds() === 0) {
+                     rowObject[header] = value.toLocaleDateString('en-CA'); // YYYY-MM-DD
+                   } else {
+                     rowObject[header] = value.toLocaleString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', '');
+                   }
+                } else {
+                   rowObject[header] = value === null || value === undefined ? "" : String(value);
+                }
               });
               return rowObject;
             });
