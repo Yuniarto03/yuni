@@ -93,12 +93,13 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName }: Int
           Explore Your Data
         </CardTitle>
         <CardDescription>
-          {fileName ? `Displaying data from: ${fileName}` : "Upload a file to see your data here."}
+          {fileName ? `Displaying data from: ${fileName}. ` : "Upload a file (CSV, XLS, XLSX) to see your data. "}
+          CSV format is recommended for best parsing results with the current system.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {uploadedData.length === 0 ? (
-          <p className="text-muted-foreground text-center py-10">No data uploaded or data is empty. Please upload a CSV file in the 'Upload Data' section.</p>
+          <p className="text-muted-foreground text-center py-10">No data uploaded or data is empty. Please upload a file in the 'Upload Data' section.</p>
         ) : (
           <>
             <div className="flex flex-col sm:flex-row gap-4 mb-6 items-center">

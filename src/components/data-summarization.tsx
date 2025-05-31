@@ -126,10 +126,10 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
             <LayoutGrid className="text-primary" />
             Summarize Your Data
           </CardTitle>
-          <CardDescription>Drag and drop fields to configure your summary table.</CardDescription>
+          <CardDescription>Drag and drop fields to configure your summary table. Accepts CSV, XLS, XLSX (CSV recommended for best parsing).</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a CSV file in the 'Upload Data' section to use this feature.</p>
+          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a file in the 'Upload Data' section to use this feature.</p>
         </CardContent>
       </Card>
     );
@@ -142,7 +142,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
           <LayoutGrid className="text-primary" />
           Summarize Your Data
         </CardTitle>
-        <CardDescription>Drag and drop fields to configure your summary table. (Simplified: 1 row, 1 column, 1 value field)</CardDescription>
+        <CardDescription>Drag and drop fields to configure your summary table. (Simplified: 1 row, 1 column, 1 value field). Data can be from CSV, XLS, or XLSX (CSV recommended for reliable parsing).</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
