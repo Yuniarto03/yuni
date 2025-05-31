@@ -22,7 +22,7 @@ interface InteractiveDataTableProps {
   uploadedData: Record<string, any>[];
   dataFields: string[];
   fileName: string | null;
-  sheetName?: string | null; // Added sheetName prop
+  sheetName?: string | null;
 }
 
 type DataItem = Record<string, any>;
@@ -78,7 +78,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     if (link.download !== undefined) {
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
-        const exportFileName = `${fileName || 'exported_data'}${sheetName ? `_${sheetName.replace(/[^a-z0-9]/gi, '_')}` : ''}_table.csv`;
+        const exportFileName = `${(fileName || 'exported_data').replace(/[^a-z0-9]/gi, '_')}${sheetName ? `_${sheetName.replace(/[^a-z0-9]/gi, '_')}` : ''}_table.csv`;
         link.setAttribute("download", exportFileName);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
@@ -99,7 +99,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
         </CardTitle>
         <CardDescription>
           {fileName ? `Displaying data from: ${currentDatasetIdentifier}. ` : "Upload a file (CSV, XLS, XLSX) to see your data. "}
-          For Excel files, ensure the correct sheet is selected for accurate table display.
+          For Excel files (XLS, XLSX), ensure the correct sheet is selected for accurate table display.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -134,7 +134,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                         onCheckedChange={(checked) => setVisibleColumns(prev => ({ ...prev, [key]: !!checked }))}
                         className="capitalize"
                       >
-                        {key.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ')}
+                        {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1')}
                       </DropdownMenuCheckboxItem>
                     ))}
                   </DropdownMenuContent>
@@ -162,7 +162,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     filteredData.slice(0, 100).map((item, rowIndex) => ( 
                       <TableRow key={`row-${rowIndex}`} className="hover:bg-muted/10">
                         {currentVisibleColumns.map(key => (
-                          <TableCell key={`${key}-${rowIndex}`} className="py-3 whitespace-nowrap">
+                          <TableCell key={`${key}-${rowIndex}`} className="whitespace-nowrap">
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
                           </TableCell>
                         ))}
