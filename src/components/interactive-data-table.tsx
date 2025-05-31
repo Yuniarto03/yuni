@@ -146,7 +146,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
               </div>
             </div>
 
-            <div className="h-[60vh] overflow-y-auto rounded-md border">
+            <div className="h-[60vh] w-full max-w-screen-xl mx-auto overflow-y-auto rounded-md border">
               <Table>
                 <TableCaption>A view of {currentDatasetIdentifier}. Displaying {Math.min(filteredData.length, 100)} of {filteredData.length} matching rows (total {uploadedData.length} rows).</TableCaption>
                 <TableHeader>
@@ -164,12 +164,12 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                 <TableBody>
                   {filteredData.length > 0 ? (
                     filteredData.slice(0, 100).map((item, rowIndex) => ( 
-                      <TableRow key={`row-${rowIndex}-${fileName}-${sheetName || 'no-sheet'}-${Math.random()}`} className="hover:bg-muted/10">
+                      <TableRow key={`row-${rowIndex}-${fileName || 'nofile'}-${sheetName || 'nosheet'}-${item[dataFields[0]] || rowIndex}`} className="hover:bg-muted/10">
                         {currentVisibleColumns.map((key, cellIndex) => (
                           <TableCell 
-                            key={`cell-${rowIndex}-${key}-${cellIndex}-${Math.random()}`} 
+                            key={`cell-${rowIndex}-${key}-${cellIndex}`} 
                             className={cn(
-                              "whitespace-nowrap", // Default padding p-4 will apply
+                              "whitespace-nowrap",
                               rowIndex === 0 && "sticky top-12 z-[9] bg-card" // 3rem is h-12 for header
                             )}
                           >
