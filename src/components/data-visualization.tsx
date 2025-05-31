@@ -213,7 +213,7 @@ export function DataVisualization({ uploadedData, dataFields }: DataVisualizatio
           <CardDescription>Create various charts from your data with customizable options.</CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a CSV file in the 'Upload Data' section to use this feature.</p>
+          <p className="text-muted-foreground text-center py-10">No data uploaded. Please upload a CSV, XLS, or XLSX file in the 'Upload Data' section to use this feature. CSV is recommended for best results.</p>
         </CardContent>
       </Card>
     );
