@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 interface InteractiveDataTableProps {
   uploadedData: Record<string, any>[];
@@ -151,7 +152,10 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                 <TableHeader>
                   <TableRow className="hover:bg-muted/20">
                     {currentVisibleColumns.map(key => (
-                      <TableHead key={key} className="sticky top-0 z-10 bg-card whitespace-nowrap capitalize font-semibold text-foreground">
+                      <TableHead 
+                        key={`header-${key}`} 
+                        className="sticky top-0 z-10 bg-card whitespace-nowrap capitalize font-semibold text-foreground"
+                      >
                         {key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1')}
                       </TableHead>
                     ))}
@@ -160,9 +164,15 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                 <TableBody>
                   {filteredData.length > 0 ? (
                     filteredData.slice(0, 100).map((item, rowIndex) => ( 
-                      <TableRow key={`row-${rowIndex}`} className="hover:bg-muted/10">
-                        {currentVisibleColumns.map(key => (
-                          <TableCell key={`${key}-${rowIndex}`} className="whitespace-nowrap">
+                      <TableRow key={`row-${rowIndex}-${fileName}-${sheetName}`} className="hover:bg-muted/10">
+                        {currentVisibleColumns.map((key, cellIndex) => (
+                          <TableCell 
+                            key={`cell-${rowIndex}-${key}-${cellIndex}`} 
+                            className={cn(
+                              "whitespace-nowrap",
+                              rowIndex === 0 && "sticky top-12 z-[9] bg-card" 
+                            )}
+                          >
                             {typeof item[key] === 'number' ? (item[key] as number).toLocaleString() : String(item[key])}
                           </TableCell>
                         ))}
@@ -187,3 +197,5 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     </Card>
   );
 }
+
+    
