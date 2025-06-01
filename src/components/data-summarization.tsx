@@ -114,7 +114,17 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       valueFieldConfigs.forEach((vfConfig, index) => {
         const state = aggStates[index];
         const originalValue = item[vfConfig.field];
-        const numValue = parseFloat(String(originalValue));
+        
+        let numValue = NaN;
+        if (typeof originalValue === 'number') {
+            numValue = originalValue;
+        } else if (typeof originalValue === 'string') {
+            const parsed = parseFloat(originalValue);
+            if (!isNaN(parsed)) {
+                numValue = parsed;
+            }
+        }
+
 
         state.countTotal++;
         state.uniqueValues.add(originalValue);
@@ -216,17 +226,19 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     } else if (area === 'values') {
       if (valueFieldConfigs.length < MAX_VALUE_FIELDS && !valueFieldConfigs.find(vf => vf.field === field)) {
         const newId = Date.now().toString(); // simple unique id
-        const newFieldConfig: ValueFieldConfig = { id: newId, field, aggregation: 'sum' };
         
-        // Check if numeric for default 'sum'
-        const aggOption = aggregationOptions.find(opt => opt.value === 'sum')!;
+        let initialAggregation: AggregationType = 'sum';
         const sampleValue = uploadedData[0]?.[field];
-        if (aggOption.numericOnly && typeof sampleValue !== 'number') {
-            newFieldConfig.aggregation = 'count'; // Switch to count if non-numeric
+        const aggOptionSum = aggregationOptions.find(opt => opt.value === 'sum')!;
+
+        if (aggOptionSum.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(sampleValue)))) {
+            initialAggregation = 'count'; // Switch to count if non-numeric
              toast({title: "Field Type Note", description: `Field '${field}' is not strictly numeric. Defaulting aggregation to 'Count'. You can change this.`, duration: 5000});
         }
+        const newFieldConfig: ValueFieldConfig = { id: newId, field, aggregation: initialAggregation };
         setValueFieldConfigs(prev => [...prev, newFieldConfig]);
-        toast({title: `Field Added`, description: `${field} added to Values.`});
+        toast({title: `Field Added`, description: `${field} added to Values with ${initialAggregation} aggregation.`});
+
       } else if (valueFieldConfigs.length >= MAX_VALUE_FIELDS) {
          toast({title: "Limit Reached", description: `Maximum ${MAX_VALUE_FIELDS} value fields allowed.`, variant: "destructive"});
       }
@@ -245,7 +257,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       if (vf.id === id) {
         const aggOption = aggregationOptions.find(opt => opt.value === newAggregation)!;
         const sampleValue = uploadedData[0]?.[vf.field];
-        if (aggOption.numericOnly && typeof sampleValue !== 'number') {
+        if (aggOption.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(sampleValue)))) {
           toast({title: "Invalid Aggregation", description: `Aggregation '${aggOption.label}' requires a numeric field. '${vf.field}' is not numeric.`, variant: "destructive", duration: 5000});
           return vf; // Don't change if invalid
         }
@@ -267,7 +279,15 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
 
     const dataRows = summaryData.map(row => {
       return headers.map(header => {
-        let cellValue = String(row[header] ?? '');
+        let cellValue = row[header];
+        if (cellValue === null || cellValue === undefined) {
+            cellValue = "";
+        } else if (typeof cellValue === 'number') {
+            cellValue = cellValue.toString(); // Convert numbers to string for CSV
+        } else {
+            cellValue = String(cellValue);
+        }
+        
         if (cellValue.includes(',')) {
           return `"${cellValue.replace(/"/g, '""')}"`;
         }
@@ -414,8 +434,8 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         </div>
         
         <h3 className="font-headline text-xl mb-4 text-primary-foreground">Summary Table</h3>
-        <div className="overflow-x-auto rounded-md border max-h-[70vh]">
-          <Table>
+        <div className="w-full overflow-x-auto rounded-md border max-h-[70vh]">
+          <Table className="min-w-max">
             <TableCaption>
               {summaryData.length > 0 ? `Displaying first ${Math.min(summaryData.length, 100)} summary rows.` : "Configure fields to see summary."}
             </TableCaption>
