@@ -70,19 +70,19 @@ const adjustHslLightness = (hslColor: string, amount: number): string => {
 
 // Custom Active Dot for Line/Area charts
 const CustomActiveDot = (props: any) => {
-  const { cx, cy, stroke, payload, dataKey, settings } = props; // settings is appSettings here
-  const dotRadius = settings.chartAnimationsEnabled ? 6 : 4;
-  const pulseRadius = settings.chartAnimationsEnabled ? 10 : 6;
+  const { cx, cy, stroke, payload, dataKey, settings: hookSettings } = props; 
+  const dotRadius = hookSettings.chartAnimationsEnabled ? 6 : 4;
+  const pulseRadius = hookSettings.chartAnimationsEnabled ? 10 : 6;
 
   if (!cx || !cy) return null;
 
   return (
     <g>
       <circle cx={cx} cy={cy} r={pulseRadius} fill={stroke} fillOpacity={0.2} stroke="none">
-        {settings.chartAnimationsEnabled && (
+        {hookSettings.chartAnimationsEnabled && (
           <animate attributeName="r" from={pulseRadius} to={pulseRadius + 5} dur="1s" begin="0s" repeatCount="indefinite" />
         )}
-        {settings.chartAnimationsEnabled && (
+        {hookSettings.chartAnimationsEnabled && (
           <animate attributeName="fill-opacity" from={0.2} to={0} dur="1s" begin="0s" repeatCount="indefinite" />
         )}
       </circle>
@@ -137,37 +137,35 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
   // Effect to reset chart fields when new data is uploaded or data is cleared
   useEffect(() => {
-    const resetStateForChart = (defaultType: ChartType, defaultTheme: keyof typeof appSettings.chartThemes) => ({
-        ...initialChartState, // Spreads the base initial state which has undefined fields
-        type: defaultType,    // Keeps the intended default type
-        theme: defaultTheme,  // Keeps the intended default theme
-        xAxisField: undefined,
-        yAxisField1: undefined,
-        yAxisAggregation1: 'sum' as AggregationType, // Reset aggregation to default
-        yAxisSeriesType1: (defaultType === 'composed' ? 'bar' : defaultType) as SeriesChartType,
-        yAxisField2: undefined,
-        yAxisAggregation2: 'sum' as AggregationType,
-        yAxisSeriesType2: 'line' as SeriesChartType,
+    const resetFieldsForChart = (defaultType: ChartType, defaultTheme: keyof typeof appSettings.chartThemes) => ({
+      type: defaultType,
+      theme: defaultTheme,
+      xAxisField: undefined,
+      yAxisField1: undefined,
+      yAxisAggregation1: 'sum' as AggregationType,
+      yAxisSeriesType1: (defaultType === 'composed' ? 'bar' : defaultType) as SeriesChartType,
+      yAxisField2: undefined,
+      yAxisAggregation2: 'sum' as AggregationType,
+      yAxisSeriesType2: 'line' as SeriesChartType,
     });
 
     if (uploadedData.length > 0 && dataFields.length > 0) {
-        setChart1(resetStateForChart('bar', appSettings.theme));
-        setChart2(resetStateForChart('line', 'ocean')); 
-
-        toast({
-            title: "Data Ready for Visualization",
-            description: "Please select fields for X and Y axes to build your charts.",
-            duration: 5000,
-        });
-    } else if (uploadedData.length === 0) { 
-      setChart1(resetStateForChart('bar', appSettings.theme));
-      setChart2(resetStateForChart('line', 'ocean'));
+      setChart1(resetFieldsForChart('bar', appSettings.theme));
+      setChart2(resetFieldsForChart('line', 'ocean'));
+      toast({
+        title: "Data Loaded",
+        description: "Data ready. Please select fields for X and Y axes to build your charts.",
+        duration: 5000,
+      });
+    } else if (uploadedData.length === 0) {
+      setChart1(resetFieldsForChart('bar', appSettings.theme));
+      setChart2(resetFieldsForChart('line', 'ocean'));
     }
-  }, [uploadedData, dataFields, toast, appSettings.theme, initialChartState]);
+  }, [uploadedData, dataFields, toast, appSettings.theme]);
 
 
   const setDefaultFields = useCallback((
-    currentChartConfig: typeof chart1, // Use typeof chart1 as it has the same structure
+    currentChartConfig: typeof chart1, 
     setChartConfig: React.Dispatch<React.SetStateAction<typeof chart1>>
   ) => {
     if (dataFields.length > 0) {
@@ -184,8 +182,10 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
         if (y1Required && (!updatedY1 || !dataFields.includes(updatedY1))) {
             updatedY1 = numericFields[0] || dataFields.find(f => f !== updatedX);
         } else if (y1Required && updatedY1 && !numericFields.includes(updatedY1) && aggregationOptions.find(opt => opt.value === currentChartConfig.yAxisAggregation1)?.numericOnly) {
+             // If Y1 is set to a non-numeric field but agg is numeric-only, find a numeric field.
             updatedY1 = numericFields[0] || dataFields.find(f => f !== updatedX);
         }
+
 
         let updatedY2 = currentChartConfig.yAxisField2;
         const availableY2 = numericFields.filter(f => f !== updatedY1 && dataFields.includes(f));
@@ -199,40 +199,42 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             ...prev,
             xAxisField: updatedX,
             yAxisField1: updatedY1,
-            yAxisSeriesType1: updatedSeriesType1,
+            yAxisSeriesType1: updatedSeriesType1, // Ensure this is correctly typed
             yAxisField2: updatedY2,
         }));
     }
   }, [dataFields, numericFields, getXAxisOptions]);
 
 
-  // Effect to set default fields ONLY when chart TYPE changes and critical fields are missing or invalid
   useEffect(() => {
     if (dataFields.length > 0 && chart1.type) {
         const xOptions = getXAxisOptions(chart1.type);
         const y1IsOptionalForCurrentAgg = (chart1.type === 'pie' || chart1.type === 'radar') && chart1.yAxisAggregation1 === 'count';
-        const y1IsEffectivelyMissing = !chart1.yAxisField1 && !y1IsOptionalForCurrentAgg;
-
-        if (!chart1.xAxisField || (chart1.xAxisField && !xOptions.includes(chart1.xAxisField)) || y1IsEffectivelyMissing) {
+        const y1IsEffectivelyMissingOrInvalid = (!chart1.yAxisField1 && !y1IsOptionalForCurrentAgg) || 
+                                            (chart1.yAxisField1 && !dataFields.includes(chart1.yAxisField1)) ||
+                                            (chart1.yAxisField1 && aggregationOptions.find(opt => opt.value === chart1.yAxisAggregation1)?.numericOnly && !numericFields.includes(chart1.yAxisField1));
+        
+        if (!chart1.xAxisField || (chart1.xAxisField && !xOptions.includes(chart1.xAxisField)) || y1IsEffectivelyMissingOrInvalid) {
              setDefaultFields(chart1, setChart1);
         }
     }
-  }, [dataFields, chart1.type, setDefaultFields, getXAxisOptions]); // Removed chart1.xAxisField, yAxisField1, yAxisAggregation1 from deps
+  }, [dataFields, chart1.type, setDefaultFields, getXAxisOptions, chart1.xAxisField, chart1.yAxisField1, chart1.yAxisAggregation1, numericFields]);
 
   useEffect(() => {
      if (dataFields.length > 0 && chart2.type) {
         const xOptions = getXAxisOptions(chart2.type);
         const y1IsOptionalForCurrentAgg = (chart2.type === 'pie' || chart2.type === 'radar') && chart2.yAxisAggregation1 === 'count';
-        const y1IsEffectivelyMissing = !chart2.yAxisField1 && !y1IsOptionalForCurrentAgg;
-        
-        if (!chart2.xAxisField || (chart2.xAxisField && !xOptions.includes(chart2.xAxisField)) || y1IsEffectivelyMissing) {
+        const y1IsEffectivelyMissingOrInvalid = (!chart2.yAxisField1 && !y1IsOptionalForCurrentAgg) ||
+                                            (chart2.yAxisField1 && !dataFields.includes(chart2.yAxisField1)) ||
+                                            (chart2.yAxisField1 && aggregationOptions.find(opt => opt.value === chart2.yAxisAggregation1)?.numericOnly && !numericFields.includes(chart2.yAxisField1));
+
+        if (!chart2.xAxisField || (chart2.xAxisField && !xOptions.includes(chart2.xAxisField)) || y1IsEffectivelyMissingOrInvalid) {
             setDefaultFields(chart2, setChart2);
         }
     }
-  }, [dataFields, chart2.type, setDefaultFields, getXAxisOptions]); // Removed chart2.xAxisField, yAxisField1, yAxisAggregation1 from deps
+  }, [dataFields, chart2.type, setDefaultFields, getXAxisOptions, chart2.xAxisField, chart2.yAxisField1, chart2.yAxisAggregation1, numericFields]);
   
   useEffect(() => {
-    // Keep chart1 theme synced with global appSettings, but don't reset its fields if only theme changes
     setChart1(prev => ({ ...prev, theme: appSettings.theme }));
   }, [appSettings.theme]);
 
@@ -410,10 +412,10 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     const effectiveYField1 = yField1 || (yAgg1 === 'count' ? 'count' : undefined);
     if (effectiveYField1) {
         const color1 = currentThemeCSS.chart1;
-        const darkerColor1 = adjustHslLightness(color1, -15); // Darken less for a softer effect
+        const darkerColor1 = adjustHslLightness(color1, -10); 
         defs.push(
             <linearGradient key={getGradientId(chartNum, 1)} id={getGradientId(chartNum, 1)} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color1} stopOpacity={0.8}/>
+                <stop offset="5%" stopColor={color1} stopOpacity={0.7}/>
                 <stop offset="95%" stopColor={darkerColor1} stopOpacity={0.9}/> 
             </linearGradient>
         );
@@ -422,10 +424,10 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     const effectiveYField2 = yField2 || (yAgg2 === 'count' ? 'count2' : undefined);
     if (effectiveYField2 && effectiveYField2 !== effectiveYField1) {
         const color2 = currentThemeCSS.chart2;
-        const darkerColor2 = adjustHslLightness(color2, -15);
+        const darkerColor2 = adjustHslLightness(color2, -10);
         defs.push(
             <linearGradient key={getGradientId(chartNum, 2)} id={getGradientId(chartNum, 2)} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color2} stopOpacity={0.8}/>
+                <stop offset="5%" stopColor={color2} stopOpacity={0.7}/>
                 <stop offset="95%" stopColor={darkerColor2} stopOpacity={0.9}/>
             </linearGradient>
         );
@@ -456,9 +458,9 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
 
   const renderChartContent = (
-    chartConfigState: typeof chart1, // Use typeof chart1 for state structure
+    chartConfigState: typeof chart1, 
     displayData: any[],
-    currentChartDisplayConfig: ChartConfig, // This is the generated ChartConfig object
+    currentChartDisplayConfig: ChartConfig, 
     chartNum: 1 | 2
   ) => {
     const { type: chartType, xAxisField, 
@@ -727,24 +729,18 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
       setChartConfig(prev => {
         const newState = {...prev, [key]: value};
         if (key === 'type') {
-            // When chart type changes, we might want to update series types
             if (value !== 'composed') {
                 newState.yAxisSeriesType1 = value as SeriesChartType; 
             } else {
-                 // For composed, ensure series types are sensible defaults if not already set
                 newState.yAxisSeriesType1 = newState.yAxisSeriesType1 || 'bar';
                 newState.yAxisSeriesType2 = newState.yAxisSeriesType2 || 'line';
             }
-
-            // If type changes to one that doesn't use Y2, clear Y2.
             if (value === 'pie' || value === 'radar' || value === 'scatter') {
                 newState.yAxisField2 = undefined;
-                newState.yAxisAggregation2 = 'sum'; // Reset aggregation
-                newState.yAxisSeriesType2 = 'line'; // Reset series type
+                newState.yAxisAggregation2 = 'sum'; 
+                newState.yAxisSeriesType2 = 'line'; 
             }
-            // Note: setDefaultFields will be called by its own useEffect if fields become invalid for the new type
         }
-        // If a Y-field is cleared, reset its aggregation and series type (if applicable)
         if (key === 'yAxisField1' && !value) {
             newState.yAxisAggregation1 = 'sum';
             if (newState.type === 'composed') newState.yAxisSeriesType1 = 'bar';
@@ -767,8 +763,9 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     const handleYFieldChange = (
         fieldKey: 'yAxisField1' | 'yAxisField2',
         aggKey: 'yAxisAggregation1' | 'yAxisAggregation2',
-        newField: string | undefined
+        newFieldVal: string | undefined
     ) => {
+        const newField = newFieldVal === NO_FIELD_SELECTED_VALUE ? undefined : newFieldVal;
         setChartConfig(prev => {
             const updatedState = { ...prev, [fieldKey]: newField };
             const currentAgg = prev[aggKey];
@@ -783,7 +780,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                 });
             }
             if (!newField) {
-              updatedState[aggKey] = 'sum'; // Reset aggregation if field is cleared
+              updatedState[aggKey] = 'sum'; 
             }
             return updatedState;
         });
@@ -807,11 +804,9 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                     duration: 7000,
                 });
             }
-            // If aggregation changes to 'count' for pie/radar, yAxisField1 can be optional (undefined)
             if (newAgg === 'count' && (updatedState.type === 'pie' || updatedState.type === 'radar') && fieldKey === 'yAxisField1') {
-                // Allow yAxisField1 to be undefined
+                // yAxisField1 can be undefined
             } else if (!currentField && fieldKey === 'yAxisField1' && newAgg !== 'count') { 
-                 // If Y1 field is empty and agg is not count, try to pick a default numeric field
                  updatedState[fieldKey] = numericFields[0] || dataFields.find(f => f !== updatedState.xAxisField);
             }
             return updatedState;
@@ -823,11 +818,12 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
       <div className="space-y-4">
         {/* Section 1: Chart Type, X-Axis, Theme */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-start">
+          {/* Menu: Chart Type */}
           <div className="space-y-1">
             <label className="text-sm font-medium text-muted-foreground">Chart Type</label>
             <Select value={chartType} onValueChange={(val: ChartType) => updateChartConfig('type', val)}>
               <SelectTrigger className="w-full bg-input focus:bg-background">
-                <SelectValue placeholder="Select Chart Type" />
+                <SelectValue placeholder="Please select" />
               </SelectTrigger>
               <SelectContent>
                 {(Object.keys(chartIcons) as ChartType[]).map(type => {
@@ -842,6 +838,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             </Select>
           </div>
 
+          {/* Menu: X-Axis Field */}
           <div className="space-y-1">
             <label className="text-sm font-medium text-muted-foreground">X-Axis Field</label>
             <Select value={xAxisField || NO_FIELD_SELECTED_VALUE} onValueChange={(val) => updateChartConfig('xAxisField', val === NO_FIELD_SELECTED_VALUE ? undefined : val)} disabled={dataFields.length === 0}>
@@ -849,17 +846,19 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                 <SelectValue placeholder="Please select" />
               </SelectTrigger>
               <SelectContent className="max-h-60">
+                <SelectItem value={NO_FIELD_SELECTED_VALUE}>Please select</SelectItem>
                 {(xAxisOptions.length > 0 ? xAxisOptions : dataFields).map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
                 {dataFields.length === 0 && <p className="p-2 text-xs text-muted-foreground text-center">No fields available</p>}
               </SelectContent>
             </Select>
           </div>
           
+          {/* Menu: Theme */}
           <div className="space-y-1">
             <label className="text-sm font-medium text-muted-foreground">Theme</label>
             <Select value={chartTheme} onValueChange={(val: keyof typeof appSettings.chartThemes) => updateChartConfig('theme', val)}>
               <SelectTrigger className="w-full bg-input focus:bg-background">
-                <SelectValue placeholder="Select Theme" />
+                <SelectValue placeholder="Please select" />
               </SelectTrigger>
               <SelectContent>
                 {(Object.keys(appSettings.chartThemes) as (keyof typeof appSettings.chartThemes)[]).map(themeKey => (
@@ -874,23 +873,26 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
         {/* Section 2: Y-Axis 1 Configuration */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-start">
+            {/* Menu: Y-Axis 1 Field */}
             <div className="space-y-1 md:col-span-1">
                 <label className="text-sm font-medium text-muted-foreground">Y-Axis 1 Field {y1IsOptional ? '(Optional for Count)' : ''}</label>
                 <Select 
                     value={yAxisField1 || NO_FIELD_SELECTED_VALUE}
-                    onValueChange={(val) => handleYFieldChange('yAxisField1', 'yAxisAggregation1', val === NO_FIELD_SELECTED_VALUE ? undefined : val)}
+                    onValueChange={(val) => handleYFieldChange('yAxisField1', 'yAxisAggregation1', val)}
                     disabled={dataFields.length === 0}
                 >
                 <SelectTrigger className="w-full bg-input focus:bg-background">
                     <SelectValue placeholder="Please select" />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
-                    {y1IsOptional && <SelectItem value={NO_FIELD_SELECTED_VALUE}>None (Use X-Axis Count)</SelectItem>}
+                    <SelectItem value={NO_FIELD_SELECTED_VALUE}>Please select</SelectItem>
+                    {/* y1IsOptional logic for "None" is implicitly handled if user selects "Please select" leading to undefined field */}
                     {dataFields.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
                     {dataFields.length === 0 && <p className="p-2 text-xs text-muted-foreground text-center">No fields available</p>}
                 </SelectContent>
                 </Select>
             </div>
+            {/* Menu: Y-Axis 1 Aggregation */}
             <div className="space-y-1 md:col-span-1">
                 <label className="text-sm font-medium text-muted-foreground">Y-Axis 1 Aggregation</label>
                 <Select 
@@ -899,7 +901,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                     disabled={!yAxisField1 && !y1IsOptional}
                 >
                 <SelectTrigger className="w-full bg-input focus:bg-background">
-                    <SelectValue placeholder="Aggregation" />
+                    <SelectValue placeholder="Please select" />
                 </SelectTrigger>
                 <SelectContent>
                     {aggregationOptions.map(opt => (
@@ -911,12 +913,13 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                 </SelectContent>
                 </Select>
             </div>
+           {/* Menu: Y-Axis 1 Series Chart Type */}
            {isComposedChart && yAxisField1 && (
             <div className="space-y-1 md:col-span-1">
                 <label className="text-sm font-medium text-muted-foreground">Y-Axis 1 Series Type</label>
                 <Select value={yAxisSeriesType1} onValueChange={(val: SeriesChartType) => updateChartConfig('yAxisSeriesType1', val)}>
                     <SelectTrigger className="w-full bg-input focus:bg-background">
-                        <SelectValue placeholder="Series Type" />
+                        <SelectValue placeholder="Please select" />
                     </SelectTrigger>
                     <SelectContent>
                         {(Object.keys(seriesChartTypeIcons) as SeriesChartType[]).map(type => {
@@ -932,23 +935,25 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
         {/* Section 3: Y-Axis 2 Configuration (Optional) */}
         {chartType !== 'pie' && chartType !== 'radar' && chartType !== 'scatter' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-start">
+                {/* Menu: Y-Axis 2 Field */}
                 <div className="space-y-1 md:col-span-1">
                     <label className="text-sm font-medium text-muted-foreground">Y-Axis 2 Field (Optional)</label>
                     <Select
                         value={yAxisField2 || NO_FIELD_SELECTED_VALUE}
-                        onValueChange={(val) => handleYFieldChange('yAxisField2', 'yAxisAggregation2', val === NO_FIELD_SELECTED_VALUE ? undefined : val)}
+                        onValueChange={(val) => handleYFieldChange('yAxisField2', 'yAxisAggregation2', val)}
                         disabled={y2Disabled || dataFields.filter(f => f !== yAxisField1).length === 0}
                     >
                     <SelectTrigger className="w-full bg-input focus:bg-background">
                         <SelectValue placeholder="Please select" />
                     </SelectTrigger>
                     <SelectContent className="max-h-60">
-                        <SelectItem value={NO_FIELD_SELECTED_VALUE}>None</SelectItem>
+                        <SelectItem value={NO_FIELD_SELECTED_VALUE}>Please select</SelectItem>
                         {dataFields.filter(f => f !== yAxisField1).map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
                         {(dataFields.filter(f => f !== yAxisField1).length === 0 && dataFields.length > 0) && <p className="p-2 text-xs text-muted-foreground text-center">No other fields</p>}
                     </SelectContent>
                     </Select>
                 </div>
+                {/* Menu: Y-Axis 2 Aggregation */}
                 <div className="space-y-1 md:col-span-1">
                     <label className="text-sm font-medium text-muted-foreground">Y-Axis 2 Aggregation</label>
                     <Select 
@@ -957,7 +962,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                         disabled={!yAxisField2 || y2Disabled}
                     >
                     <SelectTrigger className="w-full bg-input focus:bg-background">
-                        <SelectValue placeholder="Aggregation" />
+                        <SelectValue placeholder="Please select" />
                     </SelectTrigger>
                     <SelectContent>
                         {aggregationOptions.map(opt => (
@@ -969,12 +974,13 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                     </SelectContent>
                     </Select>
                 </div>
+                {/* Menu: Y-Axis 2 Series Chart Type */}
                 {isComposedChart && yAxisField2 && (
                 <div className="space-y-1 md:col-span-1">
                     <label className="text-sm font-medium text-muted-foreground">Y-Axis 2 Series Type</label>
                     <Select value={yAxisSeriesType2} onValueChange={(val: SeriesChartType) => updateChartConfig('yAxisSeriesType2', val)}>
                         <SelectTrigger className="w-full bg-input focus:bg-background">
-                            <SelectValue placeholder="Series Type" />
+                            <SelectValue placeholder="Please select" />
                         </SelectTrigger>
                         <SelectContent>
                             {(Object.keys(seriesChartTypeIcons) as SeriesChartType[]).map(type => {
@@ -1019,7 +1025,6 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
           <CardHeader className="border-b border-border/50 pb-4">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                 <CardTitle className="text-xl font-headline text-primary-foreground flex items-center gap-2">
-                {/* Menu: Chart 1 Title */}
                 <Droplets className="h-5 w-5 text-primary" />Chart 1
                 </CardTitle>
                 <Button
@@ -1033,10 +1038,8 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-            {/* Chart 1 Config Controls */}
             {canVisualize && renderConfigControls(1, chart1, setChart1)}
             <ChartContainer config={chart1Config} className="h-[450px] w-full mt-6">
-                {/* Chart 1 Content */}
                 {renderChartContent(chart1, displayDataChart1, chart1Config, 1)}
             </ChartContainer>
           </CardContent>
@@ -1050,7 +1053,6 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
           <CardHeader className="border-b border-border/50 pb-4">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                  <CardTitle className="text-xl font-headline text-primary-foreground flex items-center gap-2">
-                    {/* Menu: Chart 2 Title */}
                     <BarChartHorizontal className="h-5 w-5 text-secondary" />Chart 2
                 </CardTitle>
                 <Button
@@ -1064,10 +1066,8 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             </div>
           </CardHeader>
           <CardContent className="pt-6">
-           {/* Chart 2 Config Controls */}
            {canVisualize && renderConfigControls(2, chart2, setChart2)}
             <ChartContainer config={chart2Config} className="h-[450px] w-full mt-6">
-                {/* Chart 2 Content */}
                 {renderChartContent(chart2, displayDataChart2, chart2Config, 2)}
             </ChartContainer>
           </CardContent>
@@ -1083,5 +1083,3 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     </Card>
   );
 }
-
-    
