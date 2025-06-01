@@ -50,6 +50,11 @@ interface AggregationState {
   max: number;
 }
 
+interface OverallGrandTotalEntry {
+  state: AggregationState;
+  aggregation: AggregationType;
+}
+
 // Helper function to initialize an AggregationState
 function createInitialAggregationState(): AggregationState {
   return { sum: 0, sumOfSquares: 0, countNumeric: 0, countTotal: 0, uniqueValues: new Set(), min: Infinity, max: -Infinity };
@@ -199,7 +204,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     const groupedData = new Map<string, Map<string, AggregationState[]>>();
     const uniqueColFieldValues = new Set<string>();
     const rowGrandTotalsMap = new Map<string, AggregationState[]>();
-    const overallGrandTotalsAggStates = new Map<string, AggregationState>();
+    const overallGrandTotalsAggStates = new Map<string, OverallGrandTotalEntry>();
 
 
     dataForPivot.forEach(item => {
@@ -239,14 +244,23 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     const targetColFieldValues = currentEffectiveColumnFieldValues.length > 0 ? currentEffectiveColumnFieldValues : ["_TOTAL_"];
 
     const valueColumnHeaders: string[] = [];
-    targetColFieldValues.forEach(colVal => {
+    targetColFieldValues.forEach(colVal => { // colVal is like "Electronics", "Clothing", or "_TOTAL_" if no col field
         valueFieldConfigs.forEach(vfConfig => {
-            const headerText = targetColFieldValues[0] === "_TOTAL_" && targetColFieldValues.length === 1 
-                               ? `${vfConfig.field}` 
-                               : `${colVal} - ${vfConfig.field}`;
+            let headerText: string;
+            const isEffectivelyNoColumnSegmentation = (targetColFieldValues.length === 1 && targetColFieldValues[0] === "_TOTAL_");
+
+            if (isEffectivelyNoColumnSegmentation) {
+                headerText = vfConfig.field; // Header is just "Sales"
+            } else {
+                if (valueFieldConfigs.length > 1) {
+                    headerText = `${colVal} - ${vfConfig.field}`; // Headers: "Electronics - Sales", "Electronics - Profit"
+                } else {
+                    headerText = colVal; // Header is just "Electronics", "Clothing"
+                }
+            }
             valueColumnHeaders.push(headerText);
             if (!overallGrandTotalsAggStates.has(headerText)) {
-                overallGrandTotalsAggStates.set(headerText, createInitialAggregationState());
+                overallGrandTotalsAggStates.set(headerText, { state: createInitialAggregationState(), aggregation: vfConfig.aggregation });
             }
         });
     });
@@ -258,7 +272,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
             const headerText = `Grand Total - ${vfConfig.field}`;
             grandTotalRowColumnHeaders.push(headerText);
             if (!overallGrandTotalsAggStates.has(headerText)) {
-                overallGrandTotalsAggStates.set(headerText, createInitialAggregationState());
+                 overallGrandTotalsAggStates.set(headerText, { state: createInitialAggregationState(), aggregation: vfConfig.aggregation });
             }
         });
     }
@@ -272,15 +286,27 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       targetColFieldValues.forEach(colVal => {
         const aggStatesForCell = colGroups.get(colVal);
         valueFieldConfigs.forEach((vfConfig, vfIndex) => {
-          const headerKey = targetColFieldValues[0] === "_TOTAL_" && targetColFieldValues.length === 1
-                            ? `${vfConfig.field}`
-                            : `${colVal} - ${vfConfig.field}`;
+            let headerKey: string;
+            const isEffectivelyNoColumnSegmentation = (targetColFieldValues.length === 1 && targetColFieldValues[0] === "_TOTAL_");
+
+            if (isEffectivelyNoColumnSegmentation) {
+                headerKey = vfConfig.field;
+            } else {
+                if (valueFieldConfigs.length > 1) {
+                    headerKey = `${colVal} - ${vfConfig.field}`;
+                } else {
+                    headerKey = colVal;
+                }
+            }
           
           let finalValue: string | number = 0; 
           if (aggStatesForCell && aggStatesForCell[vfIndex]) {
             finalValue = calculateFinalValue(aggStatesForCell[vfIndex], vfConfig.aggregation);
-            const overallState = overallGrandTotalsAggStates.get(headerKey)!;
-            overallGrandTotalsAggStates.set(headerKey, mergeAggregationStates(overallState, aggStatesForCell[vfIndex]));
+            const existingEntry = overallGrandTotalsAggStates.get(headerKey)!; // Assumes headerKey exists
+            overallGrandTotalsAggStates.set(headerKey, {
+                state: mergeAggregationStates(existingEntry.state, aggStatesForCell[vfIndex]),
+                aggregation: existingEntry.aggregation
+            });
           }
           summaryRow[headerKey] = finalValue;
         });
@@ -288,10 +314,14 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
 
       if (shouldShowRowGrandTotals) {
         const currentRowGrandTotalStates = rowGrandTotalsMap.get(rowKey)!;
-        grandTotalRowColumnHeaders.forEach((gtHeaderKey, vfIndex) => {
+        grandTotalRowColumnHeaders.forEach((gtHeaderKey, vfIndex) => { // gtHeaderKey is "Grand Total - Sales"
             summaryRow[gtHeaderKey] = calculateFinalValue(currentRowGrandTotalStates[vfIndex], valueFieldConfigs[vfIndex].aggregation);
-            const overallState = overallGrandTotalsAggStates.get(gtHeaderKey)!;
-            overallGrandTotalsAggStates.set(gtHeaderKey, mergeAggregationStates(overallState, currentRowGrandTotalStates[vfIndex]));
+            
+            const existingEntry = overallGrandTotalsAggStates.get(gtHeaderKey)!; // Assumes gtHeaderKey exists
+            overallGrandTotalsAggStates.set(gtHeaderKey, {
+                state: mergeAggregationStates(existingEntry.state, currentRowGrandTotalStates[vfIndex]),
+                aggregation: existingEntry.aggregation
+            });
         });
       }
       newSummaryData.push(summaryRow);
@@ -309,18 +339,12 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     const finalGrandTotalRow: Record<string, any> = {};
     rowFields.forEach((rf, idx) => finalGrandTotalRow[rf] = idx === 0 ? "Grand Total" : "");
     
-    [...valueColumnHeaders, ...grandTotalRowColumnHeaders].forEach(headerKey => {
-        const state = overallGrandTotalsAggStates.get(headerKey);
-        if(state) {
-            let aggregationType: AggregationType | undefined;
-            const matchingVfConfig = valueFieldConfigs.find(vf => {
-                return headerKey.includes(vf.field); // Simpler check now
-            });
-            if(matchingVfConfig) aggregationType = matchingVfConfig.aggregation;
-
-            finalGrandTotalRow[headerKey] = aggregationType ? calculateFinalValue(state, aggregationType) : 0;
+    dynamicColumnHeaders.forEach(headerKey => {
+        const entry = overallGrandTotalsAggStates.get(headerKey);
+        if(entry) {
+            finalGrandTotalRow[headerKey] = calculateFinalValue(entry.state, entry.aggregation);
         } else {
-            finalGrandTotalRow[headerKey] = 0;
+            finalGrandTotalRow[headerKey] = 0; // Should not happen if populated correctly
         }
     });
     setGrandTotalRow(finalGrandTotalRow);
