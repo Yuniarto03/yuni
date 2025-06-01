@@ -39,6 +39,8 @@
     --chart-3: 300 100% 60%; /* Lighter Magenta */
     --chart-4: 210 100% 60%; /* Blue */
     --chart-5: 120 70% 50%; /* Green */
+    --chart-text-light: 195 100% 94%; /* #e0f7ff - New for light chart text */
+
 
     /* Sidebar specific theme */
     --sidebar-background: 210 65% 12%; /* Slightly different shade of dark blue-gray */

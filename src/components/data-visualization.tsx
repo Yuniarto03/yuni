@@ -8,11 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent, type ChartConfig } from '@/components/ui/chart';
-import { Bar, BarChart as ReBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as ReLineChart, Pie, PieChart as RePieChart, Area, AreaChart as ReAreaChart, Scatter, ScatterChart as ReScatterChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, RadarChart as ReRadarChart, Radar as ReRadar, Label as RechartsLabel, Tooltip as RechartsTooltip, Cell, ZAxis, ComposedChart } from 'recharts';
+import { Bar, BarChart as ReBarChart, CartesianGrid, XAxis, YAxis, Line, LineChart as ReLineChart, Pie, PieChart as RePieChart, Area, AreaChart as ReAreaChart, Scatter, ScatterChart as ReScatterChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, RadarChart as ReRadarChart, Radar as ReRadar, Label as RechartsLabel, Tooltip as RechartsTooltip, Cell, ZAxis, ComposedChart, LabelList } from 'recharts';
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from '@/components/ui/separator';
-import { useSettings } from '@/contexts/settings-context';
+import { useSettings } from '@/contexts/settings-context'; 
 
 type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar' | 'composed';
 type SeriesChartType = 'bar' | 'line' | 'area'; // For individual series in composed/multi-axis
@@ -54,24 +54,10 @@ const NO_FIELD_SELECTED_VALUE = "__NONE_FIELD_SELECTION__";
 
 const chartMargin = { top: 20, right: 30, left: 20, bottom: 80 }; 
 
-const adjustHslLightness = (hslColor: string, amount: number): string => {
-  if (!hslColor || !hslColor.startsWith('hsl')) return hslColor;
-  const match = hslColor.match(/hsl\(\s*(\d+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)/);
-  if (match) {
-    const h = parseInt(match[1]);
-    const s = parseFloat(match[2]);
-    let l = parseFloat(match[3]);
-    l = Math.max(0, Math.min(100, l + amount));
-    return `hsl(${h}, ${s}%, ${l}%)`;
-  }
-  return hslColor;
-};
-
-
 const CustomActiveDot = (props: any) => {
-  const { cx, cy, stroke, payload, dataKey, settings: hookSettings } = props; 
-  const dotRadius = hookSettings.chartAnimationsEnabled ? 6 : 4;
-  const pulseRadius = hookSettings.chartAnimationsEnabled ? 10 : 6;
+  const { cx, cy, stroke, settings: hookSettings } = props; 
+  const dotRadius = hookSettings.chartAnimationsEnabled ? 5 : 4; // Slightly larger base
+  const pulseRadius = hookSettings.chartAnimationsEnabled ? 8 : 5; // Slightly larger pulse
 
   if (!cx || !cy) return null;
 
@@ -79,17 +65,30 @@ const CustomActiveDot = (props: any) => {
     <g>
       <circle cx={cx} cy={cy} r={pulseRadius} fill={stroke} fillOpacity={0.2} stroke="none">
         {hookSettings.chartAnimationsEnabled && (
-          <animate attributeName="r" from={pulseRadius} to={pulseRadius + 5} dur="1s" begin="0s" repeatCount="indefinite" />
-        )}
-        {hookSettings.chartAnimationsEnabled && (
-          <animate attributeName="fill-opacity" from={0.2} to={0} dur="1s" begin="0s" repeatCount="indefinite" />
+          <>
+            <animate attributeName="r" from={pulseRadius} to={pulseRadius + 4} dur="1.2s" begin="0s" repeatCount="indefinite" />
+            <animate attributeName="fill-opacity" from={0.3} to={0} dur="1.2s" begin="0s" repeatCount="indefinite" />
+          </>
         )}
       </circle>
-      <circle cx={cx} cy={cy} r={dotRadius + 2} fill="hsl(var(--background))" /> 
-      <circle cx={cx} cy={cy} r={dotRadius} fill={stroke} stroke="hsl(var(--background))" strokeWidth={2} />
+      <circle cx={cx} cy={cy} r={dotRadius + 1.5} fill="hsl(var(--background))" /> 
+      <circle cx={cx} cy={cy} r={dotRadius} fill={stroke} stroke="hsl(var(--background))" strokeWidth={1.5} />
     </g>
   );
 };
+
+const SimpleDataLabel = (props: any) => {
+  const { x, y, width, value, fill } = props;
+  if (value === undefined || value === null) return null;
+  // For bar charts, position label above the bar
+  const yPos = y - 5; 
+  return (
+    <text x={x + width / 2} y={yPos} fill={fill || "hsl(var(--chart-text-light))"} textAnchor="middle" dy={0} fontSize={10} fontFamily="Rajdhani, sans-serif">
+      {Number(value).toLocaleString(undefined, {maximumFractionDigits: 1})}
+    </text>
+  );
+};
+
 
 export function DataVisualization({ uploadedData, dataFields, currentDatasetIdentifier }: DataVisualizationProps) {
   const appSettings = useSettings();
@@ -139,7 +138,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
   useEffect(() => {
     const createResetState = (currentType: ChartType, currentTheme: keyof typeof appSettings.chartThemes) => {
         let seriesType1 = currentType as SeriesChartType;
-        if (currentType === 'composed') seriesType1 = 'bar'; // Default for composed
+        if (currentType === 'composed') seriesType1 = 'bar';
 
         return {
           type: currentType,
@@ -150,7 +149,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
           yAxisSeriesType1: seriesType1,
           yAxisField2: undefined as string | undefined,
           yAxisAggregation2: 'sum' as AggregationType,
-          yAxisSeriesType2: 'line' as SeriesChartType, // Default for a potential second series in composed
+          yAxisSeriesType2: 'line' as SeriesChartType,
         };
       };
 
@@ -238,7 +237,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             (chart1.yAxisField1 && !dataFields.includes(chart1.yAxisField1)) ||
             (chart1.yAxisField1 && aggregationOptions.find(opt => opt.value === chart1.yAxisAggregation1)?.numericOnly && !numericFields.includes(chart1.yAxisField1));
         
-        if (!chart1.xAxisField || (chart1.xAxisField && !xOptions.includes(chart1.xAxisField)) || y1IsEffectivelyMissingOrInvalid) {
+        if ((!chart1.xAxisField || (chart1.xAxisField && !xOptions.includes(chart1.xAxisField)) || y1IsEffectivelyMissingOrInvalid)) {
              setDefaultFields(chart1, setChart1);
         }
     }
@@ -254,7 +253,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             (chart2.yAxisField1 && !dataFields.includes(chart2.yAxisField1)) ||
             (chart2.yAxisField1 && aggregationOptions.find(opt => opt.value === chart2.yAxisAggregation1)?.numericOnly && !numericFields.includes(chart2.yAxisField1));
 
-        if (!chart2.xAxisField || (chart2.xAxisField && !xOptions.includes(chart2.xAxisField)) || y1IsEffectivelyMissingOrInvalid) {
+        if ((!chart2.xAxisField || (chart2.xAxisField && !xOptions.includes(chart2.xAxisField)) || y1IsEffectivelyMissingOrInvalid)) {
             setDefaultFields(chart2, setChart2);
         }
     }
@@ -280,7 +279,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     chartTypeForProcessing: ChartType
   ): any[] => {
     if (!xField || data.length === 0 || (!yField1 && chartTypeForProcessing !== 'pie' && chartTypeForProcessing !== 'radar' && !(yAgg1 === 'count' && (chartTypeForProcessing !== 'scatter' && chartTypeForProcessing !== 'composed') )) ) {
-        if((chartTypeForProcessing === 'pie' || chartTypeForProcessing === 'composed') && xField && yAgg1 === 'count'){
+        if((chartTypeForProcessing === 'pie' || chartTypeForProcessing === 'composed' || chartTypeForProcessing === 'radar') && xField && yAgg1 === 'count'){ // Adjusted to include radar
              const categoryCounts: Record<string, number> = {};
              data.forEach(item => {
                  const categoryValue = item[xField];
@@ -438,32 +437,34 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
   const getGradientId = (chartNum: 1 | 2, seriesNum: 1 | 2) => `chart${chartNum}Gradient${seriesNum}`;
 
-  const renderGradientDefs = (chartNum: 1 | 2, yField1?: string, yField2?: string, yAgg1?: AggregationType, yAgg2?: AggregationType, themeKey: keyof typeof appSettings.chartThemes = 'default') => {
+  const renderGradientDefs = (
+    chartNum: 1 | 2,
+    yField1?: string, yField2?: string,
+    yAgg1?: AggregationType, yAgg2?: AggregationType,
+    themeKey: keyof typeof appSettings.chartThemes = 'default'
+  ) => {
     const currentThemeCSS = appSettings.chartThemes[themeKey] || appSettings.chartThemes.default;
     const defs: ReactNode[] = [];
-
-    const effectiveYField1 = yField1 || (yAgg1 === 'count' ? 'count' : undefined);
-    if (effectiveYField1) {
-        const color1 = currentThemeCSS.chart1;
-        const darkerColor1 = adjustHslLightness(color1, -15); 
+  
+    const createGradient = (field: string | undefined, colorCssVarKey: keyof typeof currentThemeCSS, gradientId: string) => {
+      if (field) {
+        const color = currentThemeCSS[colorCssVarKey] || currentThemeCSS.chart1; // Fallback to chart1
+        // Using HSL string directly in stopColor, opacity controlled by stopOpacity
         defs.push(
-            <linearGradient key={getGradientId(chartNum, 1)} id={getGradientId(chartNum, 1)} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color1} stopOpacity={0.8}/>
-                <stop offset="95%" stopColor={darkerColor1} stopOpacity={0.9}/> 
-            </linearGradient>
+          <linearGradient key={gradientId} id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={color} stopOpacity={0.6} /> {/* Semi-transparent start */}
+            <stop offset="95%" stopColor={color} stopOpacity={0.1} /> {/* More transparent end */}
+          </linearGradient>
         );
-    }
-
+      }
+    };
+  
+    const effectiveYField1 = yField1 || (yAgg1 === 'count' ? 'count' : undefined);
+    createGradient(effectiveYField1, 'chart1', getGradientId(chartNum, 1));
+  
     const effectiveYField2 = yField2 || (yAgg2 === 'count' ? 'count2' : undefined);
     if (effectiveYField2 && effectiveYField2 !== effectiveYField1) {
-        const color2 = currentThemeCSS.chart2;
-        const darkerColor2 = adjustHslLightness(color2, -15);
-        defs.push(
-            <linearGradient key={getGradientId(chartNum, 2)} id={getGradientId(chartNum, 2)} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color2} stopOpacity={0.8}/>
-                <stop offset="95%" stopColor={darkerColor2} stopOpacity={0.9}/>
-            </linearGradient>
-        );
+      createGradient(effectiveYField2, 'chart2', getGradientId(chartNum, 2));
     }
     return defs.length > 0 ? <defs>{defs}</defs> : null;
   };
@@ -471,20 +472,32 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
   const renderSeriesElement = (
     seriesType: SeriesChartType, 
     dataKey: string, 
-    fillOrStrokeColor: string, 
+    strokeColor: string, // For lines, and border of bars/areas
+    fillColor: string, // For fills (can be a gradient URL)
     name: string, 
-    yAxisId: "left" | "right",
-    gradientId?: string
+    yAxisId: "left" | "right"
   ) => {
-    const animationProps = { isAnimationActive: appSettings.chartAnimationsEnabled };
-    const radiusSetting: [number, number, number, number] = appSettings.chartAnimationsEnabled ? [4, 4, 0, 0] : [0,0,0,0];
+    const animationProps = { 
+        isAnimationActive: appSettings.chartAnimationsEnabled, 
+        animationDuration: 1500, 
+        animationEasing: 'easeOutQuart' as const 
+    };
+    const radiusSetting: [number, number, number, number] = appSettings.chartAnimationsEnabled ? [6, 6, 0, 0] : [0,0,0,0]; // Rounded top corners for bars
+    
+    const commonDataLabelProps = {
+        fill: "hsl(var(--chart-text-light))",
+        fontSize: 10,
+        fontFamily: "Rajdhani, sans-serif",
+        formatter: (value: number) => value.toLocaleString(undefined, {maximumFractionDigits: 1}),
+    };
+
     switch (seriesType) {
       case 'bar':
-        return <Bar dataKey={dataKey} fill={gradientId ? `url(#${gradientId})` : fillOrStrokeColor} radius={radiusSetting} name={name} yAxisId={yAxisId} {...animationProps} />;
+        return <Bar dataKey={dataKey} fill={fillColor} stroke={strokeColor} strokeWidth={1} radius={radiusSetting} name={name} yAxisId={yAxisId} {...animationProps} label={<LabelList dataKey={dataKey} position="top" {...commonDataLabelProps} />} />;
       case 'line':
-        return <Line type="monotone" dataKey={dataKey} stroke={fillOrStrokeColor} name={name} connectNulls={true} yAxisId={yAxisId} strokeWidth={3} dot={false} activeDot={<CustomActiveDot settings={appSettings} />} {...animationProps} />;
+        return <Line type="monotone" dataKey={dataKey} stroke={strokeColor} name={name} connectNulls={true} yAxisId={yAxisId} strokeWidth={2.5} dot={{ r: 3, fill: strokeColor, strokeWidth:1, stroke: 'hsl(var(--background))' }} activeDot={<CustomActiveDot settings={appSettings} />} {...animationProps} label={<LabelList dataKey={dataKey} position="top" {...commonDataLabelProps} offset={8} />} />;
       case 'area':
-        return <Area type="monotone" dataKey={dataKey} stroke={fillOrStrokeColor} fill={gradientId ? `url(#${gradientId})` : fillOrStrokeColor} fillOpacity={0.6} name={name} connectNulls={true} yAxisId={yAxisId} strokeWidth={3} activeDot={<CustomActiveDot settings={appSettings} />} {...animationProps} />;
+        return <Area type="monotone" dataKey={dataKey} stroke={strokeColor} fill={fillColor} fillOpacity={1} name={name} connectNulls={true} yAxisId={yAxisId} strokeWidth={2.5} dot={{ r: 3, fill: strokeColor, strokeWidth:1, stroke: 'hsl(var(--background))' }} activeDot={<CustomActiveDot settings={appSettings} />} {...animationProps} label={<LabelList dataKey={dataKey} position="top" {...commonDataLabelProps} offset={8} />} />;
       default:
         return null;
     }
@@ -531,11 +544,15 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     const yLabel2Base = yAxisField2 ? yAxisField2.replace(/_/g, ' ') : (yAxisAggregation2 === 'count' ? 'Count' : '');
     const aggLabel2 = aggregationOptions.find(a=>a.value === yAxisAggregation2)?.label || yAxisAggregation2;
     const finalYLabel2 = `${yLabel2Base}${yAxisAggregation2 !== 'count' || yAxisField2 ? ` (${aggLabel2})` : ''}`;
+    
+    const commonFontStyle = { fontFamily: 'Rajdhani, sans-serif', fontSize: 11 };
+    const titleFontStyle = { fontFamily: 'Orbitron, sans-serif', fontSize: 12, fill: 'hsl(var(--primary))' };
+
 
     const commonXAxisProps = {
       dataKey: xAxisField,
-      stroke: "hsl(var(--foreground))",
-      tick: { fontSize: 10, fill: "hsl(var(--foreground))" },
+      stroke: "hsl(var(--chart-text-light))",
+      tick: { ...commonFontStyle, fill: "hsl(var(--chart-text-light))" },
       angle: -45,
       textAnchor: "end" as const,
       height: 60, 
@@ -544,24 +561,38 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     };
     const commonYAxisProps1 = {
         yAxisId: "left" as const,
-        stroke: "hsl(var(--foreground))",
-        tick: { fontSize: 10, fill: "hsl(var(--foreground))" },
+        stroke: "hsl(var(--chart-text-light))",
+        tick: { ...commonFontStyle, fill: "hsl(var(--chart-text-light))" },
         tickFormatter: formatValue,
     };
      const commonYAxisProps2 = {
         yAxisId: "right" as const,
         orientation:"right" as const,
-        stroke: "hsl(var(--foreground))",
-        tick: { fontSize: 10, fill: "hsl(var(--foreground))" },
+        stroke: "hsl(var(--chart-text-light))",
+        tick: { ...commonFontStyle, fill: "hsl(var(--chart-text-light))" },
         tickFormatter: formatValue,
     };
 
     const mainChartElementY1 = effectiveYField1 
-        ? renderSeriesElement(chartType === 'composed' ? yAxisSeriesType1 : chartType as SeriesChartType, effectiveYField1, currentChartDisplayConfig[effectiveYField1]?.color || currentThemeCSS.chart1, currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1, "left", getGradientId(chartNum, 1))
+        ? renderSeriesElement(
+            chartType === 'composed' ? yAxisSeriesType1 : chartType as SeriesChartType, 
+            effectiveYField1, 
+            currentChartDisplayConfig[effectiveYField1]?.color || currentThemeCSS.chart1, // stroke color
+            chartType === 'line' ? (currentChartDisplayConfig[effectiveYField1]?.color || currentThemeCSS.chart1) : `url(#${getGradientId(chartNum, 1)})`, // fill color (gradient for bar/area)
+            currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1, 
+            "left"
+          )
         : null;
     
     const overlayChartElementY2 = yField2DataKey && effectiveYField2 && chartType === 'composed' 
-        ? renderSeriesElement(yAxisSeriesType2, yField2DataKey, currentChartDisplayConfig[yField2DataKey]?.color || currentThemeCSS.chart2, currentChartDisplayConfig[yField2DataKey]?.label as string || finalYLabel2, "right", getGradientId(chartNum, 2))
+        ? renderSeriesElement(
+            yAxisSeriesType2, 
+            yField2DataKey, 
+            currentChartDisplayConfig[yField2DataKey]?.color || currentThemeCSS.chart2, // stroke color
+            yAxisSeriesType2 === 'line' ? (currentChartDisplayConfig[yField2DataKey]?.color || currentThemeCSS.chart2) : `url(#${getGradientId(chartNum, 2)})`, // fill color
+            currentChartDisplayConfig[yField2DataKey]?.label as string || finalYLabel2, 
+            "right"
+          )
         : null;
     
     let ChartComponent: any = ReBarChart; 
@@ -578,23 +609,28 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
         return (
             <ChartComponent data={displayData} margin={chartMargin} barGap={(chartType === 'bar' || (chartType === 'composed' && yAxisSeriesType1 === 'bar' && yAxisSeriesType2 === 'bar')) && overlayChartElementY2 ? 2 : undefined} barCategoryGap={(chartType === 'bar' || (chartType === 'composed' && yAxisSeriesType1 === 'bar' && yAxisSeriesType2 === 'bar')) && overlayChartElementY2 ? '10%' : undefined}>
               {renderGradientDefs(chartNum, yAxisField1, yAxisField2, yAxisAggregation1, yAxisAggregation2, themeKey)}
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
-              <XAxis {...commonXAxisProps}>
-                <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={10} position="insideBottom" style={{ fill: "hsl(var(--foreground))", fontSize: '12px' }} />
-              </XAxis>
-              <YAxis {...commonYAxisProps1} label={{ value: finalYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px', fill: "hsl(var(--foreground))"}, dy: 40 }}/>
-              {overlayChartElementY2 && <YAxis {...commonYAxisProps2} label={{ value: finalYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px', fill: "hsl(var(--foreground))"}, dy: -40 }}/>}
-              <RechartsTooltip content={<ChartTooltipContent formatter={formatValue} />} cursor={{fill: 'hsl(var(--accent)/0.1)'}}/>
-              <ChartLegend content={<ChartLegendContent />} />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--primary) / 0.1)" />
+              <XAxis {...commonXAxisProps} label={{ value: xAxisField?.replace(/_/g, ' '), ...titleFontStyle, position: 'insideBottom', offset: 15, dy:15 }}/>
+              <YAxis {...commonYAxisProps1} label={{ value: finalYLabel1, angle: -90, ...titleFontStyle, position: 'insideLeft', style: {textAnchor: 'middle', ...titleFontStyle}, dy: 60 }}/>
+              {overlayChartElementY2 && <YAxis {...commonYAxisProps2} label={{ value: finalYLabel2, angle: -90, ...titleFontStyle, position: 'insideRight', style: {textAnchor: 'middle', ...titleFontStyle}, dy: -60 }}/>}
+              <RechartsTooltip 
+                content={<ChartTooltipContent formatter={formatValue} />} 
+                cursor={{fill: 'hsl(var(--accent)/0.1)'}}
+                wrapperStyle={{ outline: 'none' }}
+                itemStyle={{fontFamily: 'Rajdhani, sans-serif', fontSize: '12px'}}
+                labelStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '14px', color: 'hsl(var(--primary))'}}
+                payloadCreator={(payload) => payload.map(p => ({...p, color: p.stroke || p.fill }))} // Ensure color for legend in tooltip
+              />
+              <ChartLegend content={<ChartLegendContent nameKey="label" itemStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '12px', color: 'hsl(var(--chart-text-light))'}}/>} verticalAlign="top" wrapperStyle={{paddingBottom: '20px'}}/>
               {mainChartElementY1}
               {overlayChartElementY2}
             </ChartComponent>
         );
       case 'pie':
          if (!xAxisField || !effectiveYField1 || displayData.length === 0) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Pie chart requires X-Axis (category) and Y-Axis (value or count aggregation).</p>;
-        const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, ...rest }: any) => {
+        const renderCustomizedPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name, ...rest }: any) => {
           const RADIAN = Math.PI / 180;
-          const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+          const radius = innerRadius + (outerRadius - innerRadius) * 0.6; // Position label further inside
           const x = cx + radius * Math.cos(-midAngle * RADIAN);
           const y = cy + radius * Math.sin(-midAngle * RADIAN);
           const percentValue = (percent * 100).toFixed(appSettings.dataPrecision);
@@ -603,10 +639,10 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             <text
               x={x}
               y={y}
-              fill={"hsl(var(--popover-foreground))"} 
-              textAnchor={x > cx ? 'start' : 'end'}
+              fill={"hsl(var(--chart-text-light))"} 
+              textAnchor="middle"
               dominantBaseline="central"
-              className="text-xs"
+              style={{ fontFamily: 'Rajdhani, sans-serif', fontSize: 10 }}
             >
               {`${name}: ${percentValue}%`}
             </text>
@@ -614,15 +650,22 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
         };
         return (
             <RePieChart margin={{ top: 20, right: 20, bottom: 40, left: 20 }}>
-              <RechartsTooltip content={<ChartTooltipContent formatter={formatValue} />} />
+              <RechartsTooltip 
+                content={<ChartTooltipContent formatter={formatValue} />}
+                wrapperStyle={{ outline: 'none' }}
+                itemStyle={{fontFamily: 'Rajdhani, sans-serif', fontSize: '12px'}}
+                labelStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '14px', color: 'hsl(var(--primary))'}}
+              />
               <Pie 
                 data={displayData} 
                 dataKey={effectiveYField1} 
                 nameKey={xAxisField} 
                 cx="50%" cy="50%" 
-                outerRadius={Math.min(120, window.innerHeight / 5, window.innerWidth / 8)} 
+                outerRadius={Math.min(130, window.innerHeight / 4.5, window.innerWidth / 7)} 
                 labelLine={false} 
-                label={appSettings.chartAnimationsEnabled ? renderCustomizedLabel : ({name, percent}) => `${name}: ${(percent * 100).toFixed(appSettings.dataPrecision)}%`}
+                label={renderCustomizedPieLabel}
+                animationDuration={1500}
+                animationEasing="easeOutQuart"
                 isAnimationActive={appSettings.chartAnimationsEnabled}
               >
                 {displayData.map((entry, index) => {
@@ -634,42 +677,53 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                             key={`cell-${index}`} 
                             fill={cellColor}
                             stroke={"hsl(var(--card))"}
-                            strokeWidth={1}
+                            strokeWidth={2}
                         />
                     );
                 })}
               </Pie>
-              <ChartLegend content={<ChartLegendContent wrapperStyle={{ fontSize: '10px' }} />} />
+              <ChartLegend content={<ChartLegendContent nameKey="label" itemStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '12px', color: 'hsl(var(--chart-text-light))'}}/>} verticalAlign="top" wrapperStyle={{paddingBottom: '20px'}}/>
             </RePieChart>
         );
       case 'scatter':
-        if (!xAxisField || !effectiveYField1 || !yAxisField2) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Scatter plot requires an X-Axis field and two numeric Y-axis fields (Y-Axis 1 and Y-Axis 2).</p>;
+        if (!xAxisField || !effectiveYField1 ) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Scatter plot requires an X-Axis field and at least one Y-axis field.</p>;
         return (
-            <ReScatterChart margin={chartMargin}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
-              <XAxis type="category" {...commonXAxisProps} dataKey={xAxisField} name={xAxisField?.replace(/_/g, ' ')}>
-                 <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={10} position="insideBottom" style={{ fill: "hsl(var(--foreground))", fontSize: '12px' }} />
+            <ReScatterChart margin={chartMargin} animationDuration={1500} animationEasing="easeOutQuart">
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--primary) / 0.1)" />
+              <XAxis type="category" {...commonXAxisProps} dataKey={xAxisField} name={xAxisField?.replace(/_/g, ' ')} label={{ value: xAxisField?.replace(/_/g, ' '), ...titleFontStyle, position: 'insideBottom', offset: 15, dy:15 }}>
               </XAxis>
-              <YAxis type="number" {...commonYAxisProps1} dataKey={effectiveYField1} name={currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1} label={{ value: finalYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px', fill: "hsl(var(--foreground))"}, dy: 40 }}/>
-              { yAxisField2 && <YAxis yAxisId="right" type="number" {...commonYAxisProps2} dataKey={yAxisField2} name={currentChartDisplayConfig[yField2DataKey || yAxisField2]?.label as string || finalYLabel2} label={{ value: finalYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px', fill: "hsl(var(--foreground))"}, dy: -40 }}/>}
-              <ZAxis type="number" range={[60, 500]} dataKey="z" name="size" /> 
-              <RechartsTooltip content={<ChartTooltipContent formatter={formatValue} />} cursor={{ strokeDasharray: '3 3', fill: 'hsl(var(--accent)/0.1)' }} />
-              <ChartLegend content={<ChartLegendContent />} />
-              {effectiveYField1 && <Scatter name={currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1} data={displayData} fill={currentChartDisplayConfig[effectiveYField1]?.color || currentThemeCSS.chart1} shape={<circle r={6} />} isAnimationActive={appSettings.chartAnimationsEnabled} />}
+              <YAxis type="number" {...commonYAxisProps1} dataKey={effectiveYField1} name={currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1} label={{ value: finalYLabel1, angle: -90, ...titleFontStyle, position: 'insideLeft', style: {textAnchor: 'middle', ...titleFontStyle}, dy: 60 }}/>
+              { yAxisField2 && yField2DataKey && <YAxis yAxisId="right" type="number" {...commonYAxisProps2} dataKey={yField2DataKey} name={currentChartDisplayConfig[yField2DataKey]?.label as string || finalYLabel2} label={{ value: finalYLabel2, angle: -90, ...titleFontStyle, position: 'insideRight', style: {textAnchor: 'middle', ...titleFontStyle}, dy: -60 }}/>}
+              <ZAxis type="number" range={[50, 400]} dataKey="z" name="size" /> 
+              <RechartsTooltip 
+                content={<ChartTooltipContent formatter={formatValue} />} 
+                cursor={{ strokeDasharray: '3 3', fill: 'hsl(var(--accent)/0.1)' }}
+                wrapperStyle={{ outline: 'none' }}
+                itemStyle={{fontFamily: 'Rajdhani, sans-serif', fontSize: '12px'}}
+                labelStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '14px', color: 'hsl(var(--primary))'}}
+              />
+              <ChartLegend content={<ChartLegendContent nameKey="label" itemStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '12px', color: 'hsl(var(--chart-text-light))'}}/>} verticalAlign="top" wrapperStyle={{paddingBottom: '20px'}}/>
+              {effectiveYField1 && <Scatter name={currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1} data={displayData} fill={currentChartDisplayConfig[effectiveYField1]?.color || currentThemeCSS.chart1} shape={<circle r={5} />} isAnimationActive={appSettings.chartAnimationsEnabled} yAxisId="left" />}
+              {yAxisField2 && yField2DataKey && effectiveYField2 && <Scatter name={currentChartDisplayConfig[yField2DataKey]?.label as string || finalYLabel2} data={displayData} fill={currentChartDisplayConfig[yField2DataKey]?.color || currentThemeCSS.chart2} shape={<circle r={5} />} isAnimationActive={appSettings.chartAnimationsEnabled} yAxisId="right" />}
             </ReScatterChart>
         );
       case 'radar':
         if (!xAxisField || !effectiveYField1 || displayData.length === 0) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Radar chart requires X-Axis (category) and Y-Axis (value).</p>;
         return (
-            <ReRadarChart cx="50%" cy="50%" outerRadius="70%" data={displayData}>
+            <ReRadarChart cx="50%" cy="50%" outerRadius="70%" data={displayData} animationDuration={1500} animationEasing="easeOutQuart">
               {renderGradientDefs(chartNum, yAxisField1, yAxisField2, yAxisAggregation1, yAxisAggregation2, themeKey)}
-              <PolarGrid stroke="hsl(var(--border)/0.5)" />
-              <PolarAngleAxis dataKey={xAxisField} stroke="hsl(var(--foreground))" tick={{ fontSize: 10, fill: "hsl(var(--foreground))" }} />
-              <PolarRadiusAxis angle={30} domain={[0, 'auto']} stroke="hsl(var(--foreground))" tick={{ fontSize: 10, fill: "hsl(var(--foreground))" }} tickFormatter={formatValue}/>
-              <RechartsTooltip content={<ChartTooltipContent formatter={formatValue} />} />
-              {effectiveYField1 && <ReRadar name={currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1} dataKey={effectiveYField1} stroke={currentChartDisplayConfig[effectiveYField1]?.color || currentThemeCSS.chart1} fill={`url(#${getGradientId(chartNum, 1)})`} fillOpacity={0.7} strokeWidth={2} isAnimationActive={appSettings.chartAnimationsEnabled} />}
-              {effectiveYField2 && effectiveYField2 !== effectiveYField1 && <ReRadar name={currentChartDisplayConfig[yField2DataKey || effectiveYField2]?.label as string || finalYLabel2} dataKey={yField2DataKey || effectiveYField2} stroke={currentChartDisplayConfig[yField2DataKey || effectiveYField2]?.color || currentThemeCSS.chart2} fill={`url(#${getGradientId(chartNum, 2)})`} fillOpacity={0.7} strokeWidth={2} isAnimationActive={appSettings.chartAnimationsEnabled} />}
-              <ChartLegend content={<ChartLegendContent />} />
+              <PolarGrid stroke="hsl(var(--primary) / 0.2)" />
+              <PolarAngleAxis dataKey={xAxisField} stroke="hsl(var(--chart-text-light))" tick={{ ...commonFontStyle, fill: "hsl(var(--chart-text-light))" }} />
+              <PolarRadiusAxis angle={30} domain={[0, 'auto']} stroke="hsl(var(--chart-text-light))" tick={{ ...commonFontStyle, fill: "hsl(var(--chart-text-light))", showBackdrop: false }} tickFormatter={formatValue}/>
+              <RechartsTooltip 
+                content={<ChartTooltipContent formatter={formatValue} />}
+                wrapperStyle={{ outline: 'none' }}
+                itemStyle={{fontFamily: 'Rajdhani, sans-serif', fontSize: '12px'}}
+                labelStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '14px', color: 'hsl(var(--primary))'}}
+              />
+              {effectiveYField1 && <ReRadar name={currentChartDisplayConfig[effectiveYField1]?.label as string || finalYLabel1} dataKey={effectiveYField1} stroke={currentChartDisplayConfig[effectiveYField1]?.color || currentThemeCSS.chart1} fill={`url(#${getGradientId(chartNum, 1)})`} fillOpacity={0.7} strokeWidth={2.5} isAnimationActive={appSettings.chartAnimationsEnabled} />}
+              {effectiveYField2 && effectiveYField2 !== effectiveYField1 && yField2DataKey && <ReRadar name={currentChartDisplayConfig[yField2DataKey]?.label as string || finalYLabel2} dataKey={yField2DataKey} stroke={currentChartDisplayConfig[yField2DataKey]?.color || currentThemeCSS.chart2} fill={`url(#${getGradientId(chartNum, 2)})`} fillOpacity={0.7} strokeWidth={2.5} isAnimationActive={appSettings.chartAnimationsEnabled} />}
+              <ChartLegend content={<ChartLegendContent nameKey="label" itemStyle={{fontFamily: 'Orbitron, sans-serif', fontSize: '12px', color: 'hsl(var(--chart-text-light))'}}/>} verticalAlign="top" wrapperStyle={{paddingBottom: '20px'}}/>
             </ReRadarChart>
         );
       default:
@@ -755,15 +809,16 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
         if (key === 'type') {
             if (value !== 'composed') {
                 newState.yAxisSeriesType1 = value as SeriesChartType; 
-            } else {
+                 if (value === 'pie' || value === 'radar' || value === 'scatter') {
+                    newState.yAxisField2 = undefined; // Reset Y2 for non-composed or specific types
+                    newState.yAxisAggregation2 = 'sum'; 
+                    newState.yAxisSeriesType2 = 'line';
+                }
+            } else { // composed
                 newState.yAxisSeriesType1 = newState.yAxisSeriesType1 || 'bar';
                 newState.yAxisSeriesType2 = newState.yAxisSeriesType2 || 'line';
             }
-            if (value === 'pie' || value === 'radar' || value === 'scatter') {
-                newState.yAxisField2 = undefined;
-                newState.yAxisAggregation2 = 'sum'; 
-                newState.yAxisSeriesType2 = 'line'; 
-            }
+           
             if (newState.xAxisField && !getXAxisOptions(newState.type).includes(newState.xAxisField)) {
                 newState.xAxisField = undefined;
             }
@@ -790,7 +845,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
     const xAxisOptions = getXAxisOptions(chartType);
     const y1IsOptional = (chartType === 'pie' || chartType === 'radar') && yAxisAggregation1 === 'count';
-    const y2IsAvailable = chartType === 'composed'; // Y-Axis 2 is only configurable for 'composed' chart type.
+    const y2IsConfigurable = chartType === 'composed' || chartType === 'scatter'; 
     
     const handleYFieldChange = (
         fieldKey: 'yAxisField1' | 'yAxisField2',
@@ -946,7 +1001,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                 </Select>
             </div>
            {/* Menu: Y-Axis 1 Series Chart Type */}
-           {y2IsAvailable && yAxisField1 && (
+           {chartType === 'composed' && yAxisField1 && (
             <div className="space-y-1 md:col-span-1">
                 <label className="text-sm font-medium text-muted-foreground">Y-Axis 1 Series Type</label>
                 <Select value={yAxisSeriesType1} onValueChange={(val: SeriesChartType) => updateChartConfig('yAxisSeriesType1', val)}>
@@ -964,8 +1019,8 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             )}
         </div>
 
-        {/* Section 3: Y-Axis 2 Configuration (Optional for Composed Chart) */}
-        {y2IsAvailable && (
+        {/* Section 3: Y-Axis 2 Configuration (Optional for Composed or Scatter Chart) */}
+        {y2IsConfigurable && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-start">
                 {/* Menu: Y-Axis 2 Field */}
                 <div className="space-y-1 md:col-span-1">
@@ -1007,7 +1062,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
                     </Select>
                 </div>
                 {/* Menu: Y-Axis 2 Series Chart Type */}
-                {y2IsAvailable && yAxisField2 && (
+                {chartType === 'composed' && yAxisField2 && (
                 <div className="space-y-1 md:col-span-1">
                     <label className="text-sm font-medium text-muted-foreground">Y-Axis 2 Series Type</label>
                     <Select value={yAxisSeriesType2} onValueChange={(val: SeriesChartType) => updateChartConfig('yAxisSeriesType2', val)}>
@@ -1071,6 +1126,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
           </CardHeader>
           <CardContent className="pt-6">
             {canVisualize && renderConfigControls(1, chart1, setChart1)}
+            {/* Chart 1 Rendering Area */}
             <ChartContainer config={chart1Config} className="h-[450px] w-full mt-6">
                 {renderChartContent(chart1, displayDataChart1, chart1Config, 1)}
             </ChartContainer>
@@ -1099,6 +1155,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
           </CardHeader>
           <CardContent className="pt-6">
            {canVisualize && renderConfigControls(2, chart2, setChart2)}
+           {/* Chart 2 Rendering Area */}
             <ChartContainer config={chart2Config} className="h-[450px] w-full mt-6">
                 {renderChartContent(chart2, displayDataChart2, chart2Config, 2)}
             </ChartContainer>
@@ -1109,7 +1166,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
        <CardFooter className="pt-6 border-t border-border/50">
         <p className="text-xs text-muted-foreground">
           Chart rendering is optimized for clarity. For very large datasets, consider filtering or summarizing data first for best performance.
-          Tooltips display values formatted to {appSettings.dataPrecision} decimal place(s).
+          Tooltips display values formatted to {appSettings.dataPrecision} decimal place(s). Data labels show values with 1 decimal place.
         </p>
       </CardFooter>
     </Card>
