@@ -35,9 +35,8 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
   };
 
   useEffect(() => {
-    // Reset sheet selection if file changes
     if (file) {
-      setSelectedSheetName(''); // Keep sheetNames until new file potentially provides new ones
+      setSelectedSheetName('');
     }
   }, [file]);
 
@@ -60,8 +59,8 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
   };
 
   const processFileSelection = useCallback(async (selectedFile: File) => {
-    resetState(); // Reset previous file state first
-    setFile(selectedFile); // Set the new file
+    resetState();
+    setFile(selectedFile);
     setUploadStatus('idle');
     
     const fileExtension = selectedFile.name.substring(selectedFile.name.lastIndexOf('.')).toLowerCase();
@@ -81,13 +80,13 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
             const workbook = XLSX.read(data, { type: 'array' });
             setSheetNames(workbook.SheetNames);
             if (workbook.SheetNames.length > 0) {
-              setSelectedSheetName(workbook.SheetNames[0]); // Auto-select first sheet
+              setSelectedSheetName(workbook.SheetNames[0]);
             }
             toast({ title: "Sheets Loaded", description: "Please select a sheet and click 'Process File'." });
           } catch (error) {
             console.error("Error reading Excel sheet names:", error);
             toast({ title: "Error Reading Sheets", description: "Could not read sheet names from the Excel file.", variant: "destructive" });
-            resetState(); // Reset if sheet reading fails
+            resetState();
           } finally {
              setParsing(false);
           }
@@ -106,7 +105,7 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
       }
     } else if (fileExtension === '.csv') {
       toast({ title: "CSV File selected", description: selectedFile.name });
-      setSheetNames([]); // No sheets for CSV
+      setSheetNames([]);
       setSelectedSheetName('');
     } else {
       toast({ title: "Invalid file type", description: "Please upload a CSV, XLS, or XLSX file.", variant: "destructive" });
@@ -139,22 +138,19 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
       const entry: Record<string, any> = {};
       headers.forEach((header, index) => {
         const rawValue = values[index] === undefined ? '' : values[index];
-         // Try to parse as number if it's not an empty string and is a valid number
         if (rawValue.trim() !== '') {
             const numValue = Number(rawValue);
             if (!isNaN(numValue)) {
-                 // Further check to avoid converting strings like "123-456" or "1.2.3" to numbers partially
-                 // This regex checks if the string consists ONLY of digits, optional decimal, optional sign.
                 if (/^[-+]?\d*\.?\d+$/.test(rawValue)) {
                     entry[header] = numValue;
                 } else {
-                    entry[header] = rawValue; // Keep as string if it's "123text" or "1.2.3"
+                    entry[header] = rawValue;
                 }
             } else {
-                entry[header] = rawValue; // Keep as string if NaN
+                entry[header] = rawValue;
             }
         } else {
-             entry[header] = rawValue; // Keep empty string as is
+             entry[header] = rawValue; 
         }
       });
       return entry;
@@ -202,34 +198,22 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
           parsedData = data;
           parsedFields = fields;
         } else if ((fileExtension === '.xls' || fileExtension === '.xlsx') && fileContent instanceof ArrayBuffer) {
-          const workbook = XLSX.read(fileContent, { type: 'array' });
+          const workbook = XLSX.read(fileContent, { type: 'array', cellDates: true });
           if (!workbook.SheetNames.includes(selectedSheetName)) {
             throw new Error(`Sheet "${selectedSheetName}" not found in the workbook.`);
           }
           const worksheet = workbook.Sheets[selectedSheetName];
-          // Use {raw: false} to get JS types (numbers, dates, booleans). Defval for empty cells.
-          const jsonDataRaw = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, blankrows: false, defval: '', raw: false });
+          const jsonDataRaw = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, blankrows: false, defval: null, raw: true });
           
           if (jsonDataRaw.length === 0) {
             parsedFields = [];
             parsedData = [];
           } else {
-            parsedFields = jsonDataRaw[0].map(String); // First row as headers, ensure string
+            parsedFields = jsonDataRaw[0].map(headerCell => String(headerCell === null ? "" : headerCell));
             parsedData = jsonDataRaw.slice(1).map(rowArray => {
               const rowObject: Record<string, any> = {};
               parsedFields.forEach((header, index) => {
-                const value = rowArray[index];
-                // Preserve data types from XLSX parsing as much as possible
-                if (value instanceof Date) {
-                  rowObject[header] = value; // Keep as Date object
-                } else if (typeof value === 'number') {
-                  rowObject[header] = value; // Keep as number
-                } else if (typeof value === 'boolean') {
-                  rowObject[header] = value; // Keep as boolean
-                } else {
-                  // For anything else (including strings or null/undefined from defval), store as string or defval
-                  rowObject[header] = value === null || value === undefined ? "" : String(value);
-                }
+                rowObject[header] = rowArray[index]; // Value should have correct type (Date, number, boolean, string, or null)
               });
               return rowObject;
             });
@@ -345,7 +329,7 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
           </div>
         )}
 
-        {(uploadStatus === 'uploading' || parsing) && uploadProgress < 100 && !sheetNames.length && ( // Only show progress if not waiting for sheet names
+        {(uploadStatus === 'uploading' || parsing) && uploadProgress < 100 && !sheetNames.length && ( 
           <div className="space-y-2">
             <p className="text-sm text-center">{parsing && file?.name.endsWith('.xls') || file?.name.endsWith('.xlsx') ? `Reading sheets from ${file?.name}...` : (uploadStatus === 'uploading' && !parsing ? `Reading ${file?.name}...` : `Processing ${file?.name}...`)}</p>
             <Progress value={uploadProgress} className="w-full [&>div]:bg-primary" />
@@ -376,3 +360,5 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
     </Card>
   );
 }
+
+    
