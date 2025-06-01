@@ -23,7 +23,7 @@ export default function VisualizeDataPage() {
   const currentDatasetIdentifier = fileName ? `${fileName}${sheetName ? ` (Sheet: ${sheetName})` : ''}` : "N/A";
 
   return (
-    <div className="min-h-screen p-4 md:p-8 space-y-12 overflow-y-auto">
+    <div className="min-h-screen p-4 md:p-8 space-y-12 overflow-y-auto w-[1280px] mx-auto">
       <section id="data-upload-visualize" className="scroll-mt-20 py-8 first:pt-0">
         <PageHeader 
           title="Upload Data for Visualization" 

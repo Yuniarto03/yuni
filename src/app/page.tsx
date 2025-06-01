@@ -61,7 +61,7 @@ export default function InsightFlowPage() {
       case 'forecast-analysis':
         return <ForecastAnalysis uploadedData={uploadedData} dataFields={dataFields} datasetIdentifier={currentDatasetIdentifier} />;
       case 'data-visualization':
-        return <DataVisualization uploadedData={uploadedData} dataFields={dataFields} datasetIdentifier={currentDatasetIdentifier}/>;
+        return <DataVisualization uploadedData={uploadedData} dataFields={dataFields} currentDatasetIdentifier={currentDatasetIdentifier}/>;
       case 'dashboard':
          return (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -100,7 +100,7 @@ export default function InsightFlowPage() {
         <SidebarRail />
       </Sidebar>
       <SidebarInset>
-        <div className="min-h-screen p-4 md:p-8 space-y-12 overflow-y-auto">
+        <div className="min-h-screen p-4 md:p-8 space-y-12 overflow-y-auto w-[1280px] mx-auto">
           {sections.map(section => (
             <section key={section.id} id={section.id} className="scroll-mt-20 py-8 first:pt-0">
               <PageHeader title={section.title} icon={section.icon} description={section.description} />
