@@ -1,8 +1,8 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Table2, Search, Filter, FileSpreadsheet, CheckSquare, XSquare, Palette, ListFilter } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import { Table2, Search, Filter, FileSpreadsheet, CheckSquare, XSquare, Palette, ListFilter, ChevronDown, ChevronUp } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -65,6 +65,39 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
 
   const [activeContentFilters, setActiveContentFilters] = useState<Record<DataKey, Set<string>>>({});
   const [uniqueColumnValuesWithCounts, setUniqueColumnValuesWithCounts] = useState<Record<DataKey, { value: string; count: number }[]>>({});
+  
+  const columnListRef = useRef<HTMLDivElement>(null);
+  const [canScrollUp, setCanScrollUp] = useState(false);
+  const [canScrollDown, setCanScrollDown] = useState(false);
+  const itemHeight = 32; // Approximate height of a DropdownMenuCheckboxItem in pixels (py-1.5 + text)
+
+  const updateScrollButtonsState = useCallback(() => {
+    const el = columnListRef.current;
+    if (el) {
+      setCanScrollUp(el.scrollTop > 0);
+      setCanScrollDown(el.scrollTop < el.scrollHeight - el.clientHeight);
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    updateScrollButtonsState();
+    const el = columnListRef.current;
+    if (el) {
+      el.addEventListener('scroll', updateScrollButtonsState);
+      return () => el.removeEventListener('scroll', updateScrollButtonsState);
+    }
+  }, [dataFields, updateScrollButtonsState]); // Re-check when dataFields change (list might repopulate)
+
+
+  const handleScrollColumns = (direction: 'up' | 'down') => {
+    const el = columnListRef.current;
+    if (el) {
+      const scrollAmount = itemHeight * 3; // Scroll by 3 items at a time
+      el.scrollTop += direction === 'up' ? -scrollAmount : scrollAmount;
+      updateScrollButtonsState();
+    }
+  };
+
 
   useEffect(() => {
     const initialVisibility: Record<DataKey, boolean> = {};
@@ -75,7 +108,10 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     });
     setVisibleColumns(initialVisibility);
     setActiveContentFilters(initialContentFilters);
-  }, [dataFields]);
+    // When dataFields change, reset scroll and update button states
+    if(columnListRef.current) columnListRef.current.scrollTop = 0;
+    updateScrollButtonsState();
+  }, [dataFields, updateScrollButtonsState]);
 
   useEffect(() => {
     if (uploadedData.length === 0) {
@@ -89,27 +125,33 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     let dataAfterSearch = uploadedData;
     if (searchTerm) {
       dataAfterSearch = uploadedData.filter(item =>
-        currentVisibleKeys.some(key =>
-          String(item[key]).toLowerCase().includes(searchTerm.toLowerCase())
-        )
+        currentVisibleKeys.some(key => {
+           const val = item[key];
+           if (val === null || val === undefined) return false;
+           return String(val).toLowerCase().includes(searchTerm.toLowerCase());
+        })
       );
     }
-
+    
     currentVisibleKeys.forEach(targetColumnKey => {
       const valueMap = new Map<string, number>();
+      
+      // Filter data based on active content filters in OTHER columns
       const dataFilteredByOtherColumns = dataAfterSearch.filter(item => {
         return currentVisibleKeys.every(filterColumnKey => {
-          if (filterColumnKey === targetColumnKey) return true;
+          if (filterColumnKey === targetColumnKey) return true; // Don't filter by the target column itself for its own unique values count
           const selectedValues = activeContentFilters[filterColumnKey];
           if (!selectedValues || selectedValues.size === 0) {
             return true;
           }
-          return selectedValues.has(String(item[filterColumnKey]));
+          const cellValue = item[filterColumnKey];
+          return selectedValues.has(cellValue === null || cellValue === undefined ? "" : String(cellValue));
         });
       });
 
       dataFilteredByOtherColumns.forEach(item => {
-        const val = String(item[targetColumnKey]);
+        const cellValue = item[targetColumnKey];
+        const val = cellValue === null || cellValue === undefined ? "" : String(cellValue);
         valueMap.set(val, (valueMap.get(val) || 0) + 1);
       });
 
@@ -131,9 +173,11 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     let dataAfterSearch = uploadedData;
     if (searchTerm) {
       dataAfterSearch = uploadedData.filter(item =>
-        currentVisibleKeys.some(key =>
-          String(item[key]).toLowerCase().includes(searchTerm.toLowerCase())
-        )
+        currentVisibleKeys.some(key => {
+          const val = item[key];
+          if (val === null || val === undefined) return false;
+          return String(val).toLowerCase().includes(searchTerm.toLowerCase());
+        })
       );
     }
 
@@ -143,7 +187,8 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
         if (!selectedValues || selectedValues.size === 0) {
           return true;
         }
-        return selectedValues.has(String(item[key]));
+        const cellValue = item[key];
+        return selectedValues.has(cellValue === null || cellValue === undefined ? "" : String(cellValue));
       });
     });
     return contentFilteredData;
@@ -163,8 +208,21 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     const headerRow = activeFields.join(',');
     const dataRows = filteredData.map(row =>
       activeFields.map(field => {
-        let value = String(row[field]); 
-        if (value.includes(',')) {
+        let value = row[field]; 
+        if (value === null || value === undefined) {
+          value = "";
+        } else if (value instanceof Date) {
+          const d = value as Date;
+          if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0) {
+            value = d.toLocaleDateString('en-CA'); // YYYY-MM-DD for consistency
+          } else {
+            value = d.toISOString();
+          }
+        } else {
+          value = String(value);
+        }
+        
+        if (typeof value === 'string' && value.includes(',')) {
           return `"${value}"`;
         }
         return value;
@@ -244,6 +302,23 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
   
   const activeContentFilterCount = Object.values(activeContentFilters).reduce((acc, columnSet) => acc + (columnSet.size > 0 ? 1 : 0), 0);
 
+  const formatCellDisplayValue = (value: any): string => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    if (value instanceof Date) {
+      const d = value as Date;
+      // Check if it's a date-only (time part is midnight)
+      if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0 && d.getMilliseconds() === 0) {
+        return d.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' });
+      } else {
+        // For datetime, include time
+        return d.toLocaleString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      }
+    }
+    return String(value);
+  };
+
 
   return (
     <Card className="bg-card/80 backdrop-blur-sm shadow-xl">
@@ -313,13 +388,13 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                <DropdownMenu>
+                <DropdownMenu modal={false} onOpenChange={(open) => { if (open) updateScrollButtonsState(); }}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-9">
                       <Filter className="mr-2 h-4 w-4" /> Columns ({currentVisibleColumnKeys.length}/{dataFields.length})
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-64 max-h-96">
+                  <DropdownMenuContent align="end" className="w-64" onFocusOutside={(e) => e.preventDefault()}>
                       <DropdownMenuLabel>Toggle Columns</DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={handleSelectAllColumns} className="cursor-pointer">
@@ -329,8 +404,20 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                       <XSquare className="mr-2 h-4 w-4" /> Unselect All
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <ScrollArea className="max-h-80"> {/* Max height for the scrollable list of columns */}
-                        <div className="px-1"> {/* Add padding if ScrollArea children need it, usually items have their own */}
+                       <Button variant="ghost" size="sm" className="w-full justify-center h-7" onClick={() => handleScrollColumns('up')} disabled={!canScrollUp}>
+                        <ChevronUp className="h-4 w-4" />
+                      </Button>
+                      <div 
+                        ref={columnListRef} 
+                        className="overflow-y-hidden px-1" 
+                        style={{ maxHeight: `${itemHeight * 7.5}px` }} // Show approx 7.5 items
+                        onWheel={(e) => {
+                            if(columnListRef.current) {
+                                columnListRef.current.scrollTop += e.deltaY > 0 ? itemHeight : -itemHeight;
+                                updateScrollButtonsState();
+                            }
+                        }}
+                      >
                           {dataFields.map(key => (
                           <DropdownMenuCheckboxItem
                               key={key}
@@ -342,11 +429,13 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                           </DropdownMenuCheckboxItem>
                           ))}
                         </div>
-                      </ScrollArea>
+                        <Button variant="ghost" size="sm" className="w-full justify-center h-7" onClick={() => handleScrollColumns('down')} disabled={!canScrollDown}>
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <DropdownMenu>
+                <DropdownMenu modal={false}>
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="h-9">
                       <ListFilter className="mr-2 h-4 w-4" />
@@ -354,51 +443,53 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-80 max-h-[70vh] p-0">
-                     <Accordion type="multiple" className="w-full">
-                        {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.some(uv => uv.count > 0)).map(columnKey => {
-                            const uniqueValues = uniqueColumnValuesWithCounts[columnKey]?.filter(uv => uv.count > 0) || [];
-                            const activeFiltersInColumn = activeContentFilters[columnKey]?.size || 0;
-                            return (
-                            <AccordionItem value={columnKey} key={columnKey}>
-                                <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">
-                                    <div className="flex justify-between w-full items-center">
-                                        <span className="capitalize truncate pr-2">{columnKey.replace(/_/g, ' ')}</span>
-                                        {activeFiltersInColumn > 0 && <span className="text-xs text-muted-foreground">({activeFiltersInColumn} selected)</span>}
-                                    </div>
-                                </AccordionTrigger>
-                                <AccordionContent className="pb-0">
-                                    <div className="p-2 border-t">
-                                    <div className="flex justify-between mb-2">
-                                        <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleSelectAllContentValues(columnKey)}>Select All Visible ({uniqueValues.length})</Button>
-                                        <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleUnselectAllContentValues(columnKey)}>Unselect All</Button>
-                                    </div>
-                                    <ScrollArea className="h-48">
-                                        <div className="space-y-1 pr-3">
-                                        {uniqueValues.map(({ value, count }) => (
-                                            <Label key={value} className="flex items-center space-x-2 p-1 rounded hover:bg-muted/50 text-xs font-normal">
-                                            <Checkbox
-                                                checked={activeContentFilters[columnKey]?.has(value) || false}
-                                                onCheckedChange={(checked) => handleContentFilterChange(columnKey, value, !!checked)}
-                                                id={`content-filter-${columnKey}-${value.replace(/\s+/g, '-')}`}
-                                            />
-                                            <span className="flex-grow truncate" title={value}>{value || "(empty)"}</span>
-                                            <span className="text-muted-foreground">({count})</span>
-                                            </Label>
-                                        ))}
-                                        {uniqueValues.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No filterable values with current criteria.</p>}
-                                        </div>
-                                    </ScrollArea>
-                                    </div>
-                                </AccordionContent>
-                            </AccordionItem>
-                            );
-                        })}
-                        {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.some(uv => uv.count > 0)).length === 0 && (
-                            <div className="p-4 text-sm text-muted-foreground text-center">
-                                No columns with filterable content for current criteria.
-                            </div>
-                        )}
-                     </Accordion>
+                     <ScrollArea className="h-full"> {/* Scroll for the accordion items themselves */}
+                       <Accordion type="multiple" className="w-full">
+                          {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.some(uv => uv.count > 0)).map(columnKey => {
+                              const uniqueValues = uniqueColumnValuesWithCounts[columnKey]?.filter(uv => uv.count > 0) || [];
+                              const activeFiltersInColumn = activeContentFilters[columnKey]?.size || 0;
+                              return (
+                              <AccordionItem value={columnKey} key={columnKey}>
+                                  <AccordionTrigger className="px-3 py-2 text-sm hover:no-underline">
+                                      <div className="flex justify-between w-full items-center">
+                                          <span className="capitalize truncate pr-2">{columnKey.replace(/_/g, ' ')}</span>
+                                          {activeFiltersInColumn > 0 && <span className="text-xs text-muted-foreground">({activeFiltersInColumn} selected)</span>}
+                                      </div>
+                                  </AccordionTrigger>
+                                  <AccordionContent className="pb-0">
+                                      <div className="p-2 border-t">
+                                      <div className="flex justify-between mb-2">
+                                          <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleSelectAllContentValues(columnKey)}>Select All Visible ({uniqueValues.length})</Button>
+                                          <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleUnselectAllContentValues(columnKey)}>Unselect All</Button>
+                                      </div>
+                                      <ScrollArea className="h-48">
+                                          <div className="space-y-1 pr-3">
+                                          {uniqueValues.map(({ value, count }) => (
+                                              <Label key={value} className="flex items-center space-x-2 p-1 rounded hover:bg-muted/50 text-xs font-normal">
+                                              <Checkbox
+                                                  checked={activeContentFilters[columnKey]?.has(value) || false}
+                                                  onCheckedChange={(checked) => handleContentFilterChange(columnKey, value, !!checked)}
+                                                  id={`content-filter-${columnKey}-${value.replace(/\s+/g, '-')}`}
+                                              />
+                                              <span className="flex-grow truncate" title={value}>{value || "(empty)"}</span>
+                                              <span className="text-muted-foreground">({count})</span>
+                                              </Label>
+                                          ))}
+                                          {uniqueValues.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No filterable values with current criteria.</p>}
+                                          </div>
+                                      </ScrollArea>
+                                      </div>
+                                  </AccordionContent>
+                              </AccordionItem>
+                              );
+                          })}
+                          {currentVisibleColumnKeys.filter(key => uniqueColumnValuesWithCounts[key]?.some(uv => uv.count > 0)).length === 0 && (
+                              <div className="p-4 text-sm text-muted-foreground text-center">
+                                  No columns with filterable content for current criteria.
+                              </div>
+                          )}
+                       </Accordion>
+                     </ScrollArea>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -437,7 +528,7 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
                             key={`cell-${rowIndex}-${key}-${cellIndex}`}
                             className="whitespace-nowrap p-4 align-middle"
                           >
-                            {String(item[key])}
+                            {formatCellDisplayValue(item[key])}
                           </TableCell>
                         ))}
                       </TableRow>
@@ -464,5 +555,3 @@ export function InteractiveDataTable({ uploadedData, dataFields, fileName, sheet
     </Card>
   );
 }
-
-    

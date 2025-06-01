@@ -135,12 +135,27 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
     if (lines.length === 0) return { data: [], fields: [] };
     const headers = lines[0].split(',').map(header => header.trim().replace(/^"|"$/g, ''));
     const data = lines.slice(1).map(line => {
-      // Regex to split CSV by comma, but not if comma is inside quotes
       const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.trim().replace(/^"|"$/g, ''));
       const entry: Record<string, any> = {};
       headers.forEach((header, index) => {
-        // Store all CSV values as strings
-        entry[header] = values[index] || '';
+        const rawValue = values[index] === undefined ? '' : values[index];
+         // Try to parse as number if it's not an empty string and is a valid number
+        if (rawValue.trim() !== '') {
+            const numValue = Number(rawValue);
+            if (!isNaN(numValue)) {
+                 // Further check to avoid converting strings like "123-456" or "1.2.3" to numbers partially
+                 // This regex checks if the string consists ONLY of digits, optional decimal, optional sign.
+                if (/^[-+]?\d*\.?\d+$/.test(rawValue)) {
+                    entry[header] = numValue;
+                } else {
+                    entry[header] = rawValue; // Keep as string if it's "123text" or "1.2.3"
+                }
+            } else {
+                entry[header] = rawValue; // Keep as string if NaN
+            }
+        } else {
+             entry[header] = rawValue; // Keep empty string as is
+        }
       });
       return entry;
     });
@@ -192,10 +207,7 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
             throw new Error(`Sheet "${selectedSheetName}" not found in the workbook.`);
           }
           const worksheet = workbook.Sheets[selectedSheetName];
-          // Use {header: 1} to get an array of arrays, then process headers.
-          // Use defval: '' to ensure empty cells are read as empty strings not undefined.
-          // raw: false ensures dates are parsed as JS dates, but we'll stringify them.
-          // cellStyles: false and other options can be explored for performance if needed.
+          // Use {raw: false} to get JS types (numbers, dates, booleans). Defval for empty cells.
           const jsonDataRaw = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, blankrows: false, defval: '', raw: false });
           
           if (jsonDataRaw.length === 0) {
@@ -207,19 +219,16 @@ export function DataUpload({ onDataUploaded }: DataUploadProps) {
               const rowObject: Record<string, any> = {};
               parsedFields.forEach((header, index) => {
                 const value = rowArray[index];
-                // Store all Excel values as strings. Handle null/undefined as empty string.
-                // XLSX with raw:false might return Date objects for dates; convert to ISO string or desired string format.
+                // Preserve data types from XLSX parsing as much as possible
                 if (value instanceof Date) {
-                   // Format date as YYYY-MM-DD HH:MM:SS or as desired
-                   // For simplicity, using ISO string, can be customized.
-                   // Check if it's a date-only or date-time by checking if time part is zero.
-                   if (value.getHours() === 0 && value.getMinutes() === 0 && value.getSeconds() === 0 && value.getMilliseconds() === 0) {
-                     rowObject[header] = value.toLocaleDateString('en-CA'); // YYYY-MM-DD
-                   } else {
-                     rowObject[header] = value.toLocaleString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(',', '');
-                   }
+                  rowObject[header] = value; // Keep as Date object
+                } else if (typeof value === 'number') {
+                  rowObject[header] = value; // Keep as number
+                } else if (typeof value === 'boolean') {
+                  rowObject[header] = value; // Keep as boolean
                 } else {
-                   rowObject[header] = value === null || value === undefined ? "" : String(value);
+                  // For anything else (including strings or null/undefined from defval), store as string or defval
+                  rowObject[header] = value === null || value === undefined ? "" : String(value);
                 }
               });
               return rowObject;
