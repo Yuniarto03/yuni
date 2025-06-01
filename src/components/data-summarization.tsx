@@ -26,7 +26,7 @@ type AggregationType = 'sum' | 'count' | 'average' | 'min' | 'max' | 'uniqueCoun
 
 const aggregationOptions: { value: AggregationType; label: string; numericOnly: boolean }[] = [
   { value: 'sum', label: 'Sum', numericOnly: true },
-  { value: 'count', label: 'Count', numericOnly: false },
+  { value: 'count', label: 'Count (Non-Empty)', numericOnly: false },
   { value: 'average', label: 'Average', numericOnly: true },
   { value: 'min', label: 'Min', numericOnly: true },
   { value: 'max', label: 'Max', numericOnly: true },
@@ -44,7 +44,7 @@ interface AggregationState {
   sum: number;
   sumOfSquares: number; // For standard deviation
   countNumeric: number; // Count of numeric values for average, sdev
-  countTotal: number; // Total count of items (numeric or not) for 'count' aggregation
+  countTotal: number; // Total count of non-empty items for 'count' aggregation
   uniqueValues: Set<any>; // For unique count
   min: number;
   max: number;
@@ -57,15 +57,22 @@ function createInitialAggregationState(): AggregationState {
 
 // Helper function to update an AggregationState with a new value
 function updateAggregationState(state: AggregationState, originalValue: any): AggregationState {
-  state.countTotal++;
-  state.uniqueValues.add(originalValue);
+  // Only increment countTotal if the value is not null, undefined, or an empty/whitespace string
+  if (originalValue !== null && originalValue !== undefined && String(originalValue).trim() !== "") {
+    state.countTotal++;
+  }
+  state.uniqueValues.add(originalValue); // uniqueValues still tracks all values, including blanks if present
 
   let numValue = NaN;
   if (typeof originalValue === 'number') {
     numValue = originalValue;
   } else if (typeof originalValue === 'string') {
-    const parsed = parseFloat(originalValue.replace(/,/g, ''));
-    if (!isNaN(parsed)) numValue = parsed;
+    // Attempt to parse string to number, handling potential commas
+    const cleanedString = originalValue.replace(/,/g, '');
+    if (cleanedString.trim() !== '') { // Ensure it's not empty after cleaning
+        const parsed = parseFloat(cleanedString);
+        if (!isNaN(parsed)) numValue = parsed;
+    }
   }
 
   if (!isNaN(numValue)) {
@@ -84,13 +91,10 @@ function mergeAggregationStates(stateA: AggregationState, stateB: AggregationSta
     mergedState.sum = stateA.sum + stateB.sum;
     mergedState.sumOfSquares = stateA.sumOfSquares + stateB.sumOfSquares;
     mergedState.countNumeric = stateA.countNumeric + stateB.countNumeric;
-    mergedState.countTotal = stateA.countTotal + stateB.countTotal; // Assuming simple sum for count for now
-    // For unique values, min, max, this is more complex if merging pre-aggregated states.
-    // For true accuracy, unique/min/max totals would need re-aggregation from raw data or careful handling.
-    // This simple merge is okay for sum, count, average.
-    // For uniqueValues, min, max, this simplified merge is a placeholder.
+    mergedState.countTotal = stateA.countTotal + stateB.countTotal;
+    
     stateA.uniqueValues.forEach(val => mergedState.uniqueValues.add(val));
-    stateB.uniqueValues.forEach(val => mergedState.uniqueValues.add(val)); // This results in a union, might not be a "sum" of unique counts.
+    stateB.uniqueValues.forEach(val => mergedState.uniqueValues.add(val));
     mergedState.min = Math.min(stateA.min, stateB.min);
     mergedState.max = Math.max(stateA.max, stateB.max);
     return mergedState;
@@ -109,24 +113,24 @@ function calculateFinalValue(state: AggregationState, aggregation: AggregationTy
     case 'sdev':
       if (state.countNumeric < 2) return 0;
       const variance = (state.sumOfSquares - (state.sum * state.sum) / state.countNumeric) / (state.countNumeric - 1);
-      return Math.sqrt(Math.max(0, variance)); // max(0, variance) to handle potential floating point issues
+      return Math.sqrt(Math.max(0, variance));
     default: return state.sum;
   }
 }
 
 
 const MAX_ROW_FIELDS = 2;
-const MAX_COL_FIELDS = 1; // Keeping this to 1 simplifies column header complexity significantly
+const MAX_COL_FIELDS = 1;
 const MAX_VALUE_FIELDS = 3;
 
 
 export function DataSummarization({ uploadedData, dataFields }: DataSummarizationProps) {
   const [rowFields, setRowFields] = useState<string[]>([]);
-  const [columnFields, setColumnFields] = useState<string[]>([]); // Max 1 for now
+  const [columnFields, setColumnFields] = useState<string[]>([]);
   const [valueFieldConfigs, setValueFieldConfigs] = useState<ValueFieldConfig[]>([]);
   
   const [summaryData, setSummaryData] = useState<Record<string, any>[]>([]);
-  const [dynamicColumnHeaders, setDynamicColumnHeaders] = useState<string[]>([]); // Combined headers for values and row grand totals
+  const [dynamicColumnHeaders, setDynamicColumnHeaders] = useState<string[]>([]);
   const [effectiveColumnFieldValues, setEffectiveColumnFieldValues] = useState<string[]>([]);
   const [grandTotalRow, setGrandTotalRow] = useState<Record<string, any> | null>(null);
   
@@ -192,19 +196,16 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       return;
     }
 
-    // groupedData: Map<RowKey, Map<ColKey, AggregationState[]>>
     const groupedData = new Map<string, Map<string, AggregationState[]>>();
     const uniqueColFieldValues = new Set<string>();
-    // rowGrandTotalsMap: Map<RowKey, AggregationState[]> (for grand total across columns for each row)
     const rowGrandTotalsMap = new Map<string, AggregationState[]>();
-    // overallGrandTotalsAggStates: Map<HeaderKey, AggregationState> (for footer grand total line)
     const overallGrandTotalsAggStates = new Map<string, AggregationState>();
 
 
     dataForPivot.forEach(item => {
       const rowKey = rowFields.map(rf => String(item[rf] ?? '')).join('||');
       
-      let colKeyValue = "_TOTAL_"; // Default if no columnFields
+      let colKeyValue = "_TOTAL_"; 
       if (columnFields.length > 0 && columnFields[0]) {
         colKeyValue = String(item[columnFields[0]] ?? '');
         uniqueColFieldValues.add(colKeyValue);
@@ -225,7 +226,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       valueFieldConfigs.forEach((vfConfig, vfIndex) => {
         const originalValue = item[vfConfig.field];
         updateAggregationState(aggStatesForCell[vfIndex], originalValue);
-        updateAggregationState(currentRowGrandTotalStates[vfIndex], originalValue); // Update row grand total state
+        updateAggregationState(currentRowGrandTotalStates[vfIndex], originalValue); 
       });
     });
 
@@ -235,10 +236,8 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
 
     const newSummaryData: Record<string, any>[] = [];
     
-    // Determine actual column value keys to iterate for headers and data (could be ["_TOTAL_"] or actual values)
     const targetColFieldValues = currentEffectiveColumnFieldValues.length > 0 ? currentEffectiveColumnFieldValues : ["_TOTAL_"];
 
-    // Define all column headers: for each col value + value field, then for each row grand total value field
     const valueColumnHeaders: string[] = [];
     targetColFieldValues.forEach(colVal => {
         valueFieldConfigs.forEach(vfConfig => {
@@ -280,19 +279,11 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
                             ? `${vfConfig.field} (${aggInfo})`
                             : `${colVal} - ${vfConfig.field} (${aggInfo})`;
           
-          let finalValue = 0; // Default if no data for cell
+          let finalValue: string | number = 0; 
           if (aggStatesForCell && aggStatesForCell[vfIndex]) {
             finalValue = calculateFinalValue(aggStatesForCell[vfIndex], vfConfig.aggregation);
-            // Update overall grand total for this specific column header
             const overallState = overallGrandTotalsAggStates.get(headerKey)!;
-            // This direct update assumes the values being summed are appropriate (e.g. sums of sums).
-            // For more complex aggregations (avg, min, max, sdev, unique), merging states or re-aggregating is better.
-            // For simplicity here, we'll update based on the cell's final value, which is okay for sum/count.
-            // A more robust way: merge aggStatesForCell[vfIndex] into overallState.
-            // This part is tricky for non-additive aggregations like average or sdev.
-            // We are merging the states instead of values for better accuracy
             overallGrandTotalsAggStates.set(headerKey, mergeAggregationStates(overallState, aggStatesForCell[vfIndex]));
-
           }
           summaryRow[headerKey] = finalValue;
         });
@@ -302,9 +293,8 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         const currentRowGrandTotalStates = rowGrandTotalsMap.get(rowKey)!;
         grandTotalRowColumnHeaders.forEach((gtHeaderKey, vfIndex) => {
             summaryRow[gtHeaderKey] = calculateFinalValue(currentRowGrandTotalStates[vfIndex], valueFieldConfigs[vfIndex].aggregation);
-            // Update overall grand total for this row grand total header
-             const overallState = overallGrandTotalsAggStates.get(gtHeaderKey)!;
-             overallGrandTotalsAggStates.set(gtHeaderKey, mergeAggregationStates(overallState, currentRowGrandTotalStates[vfIndex]));
+            const overallState = overallGrandTotalsAggStates.get(gtHeaderKey)!;
+            overallGrandTotalsAggStates.set(gtHeaderKey, mergeAggregationStates(overallState, currentRowGrandTotalStates[vfIndex]));
         });
       }
       newSummaryData.push(summaryRow);
@@ -317,16 +307,14 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       }
       return 0;
     });
-    setSummaryData(newSummaryData.slice(0, 100)); // Limit display for performance
+    setSummaryData(newSummaryData.slice(0, 100));
 
-    // Finalize overallGrandTotalsAggStates by calculating final values
     const finalGrandTotalRow: Record<string, any> = {};
     rowFields.forEach((rf, idx) => finalGrandTotalRow[rf] = idx === 0 ? "Grand Total" : "");
     
     [...valueColumnHeaders, ...grandTotalRowColumnHeaders].forEach(headerKey => {
         const state = overallGrandTotalsAggStates.get(headerKey);
         if(state) {
-            // Need to find the correct aggregation type for this headerKey
             let aggregationType: AggregationType | undefined;
             const matchingVfConfig = valueFieldConfigs.find(vf => {
                 const aggInfo = aggregationOptions.find(opt => opt.value === vf.aggregation)?.label || vf.aggregation;
@@ -374,11 +362,11 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
 
         if (aggOptionSum.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(String(sampleValue).replace(/,/g, ''))))) {
             initialAggregation = 'count';
-             toast({title: "Field Type Note", description: `Field '${field}' is not strictly numeric. Defaulting aggregation to 'Count'. You can change this.`, duration: 5000});
+             toast({title: "Field Type Note", description: `Field '${field}' is not strictly numeric. Defaulting aggregation to 'Count (Non-Empty)'. You can change this.`, duration: 5000});
         }
         const newFieldConfig: ValueFieldConfig = { id: newId, field, aggregation: initialAggregation };
         setValueFieldConfigs(prev => [...prev, newFieldConfig]);
-        toast({title: `Field Added`, description: `${field} added to Values with ${initialAggregation} aggregation.`});
+        toast({title: `Field Added`, description: `${field} added to Values with ${initialAggregation.replace('Non-Empty', '').trim()} aggregation.`});
 
       } else if (valueFieldConfigs.length >= MAX_VALUE_FIELDS) {
          toast({title: "Limit Reached", description: `Maximum ${MAX_VALUE_FIELDS} value fields allowed.`, variant: "destructive"});
@@ -407,7 +395,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         const sampleValue = dataForPivot[0]?.[vf.field];
         if (aggOption.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(String(sampleValue).replace(/,/g, ''))))) {
           toast({title: "Invalid Aggregation", description: `Aggregation '${aggOption.label}' requires a numeric field. '${vf.field}' is not numeric.`, variant: "destructive", duration: 5000});
-          return vf; // Don't change if invalid
+          return vf; 
         }
         return { ...vf, aggregation: newAggregation };
       }
@@ -422,7 +410,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     }
     toast({ title: "Exporting Summary", description: "Summary table export to CSV started..." });
     
-    const headers = [...rowFields, ...dynamicColumnHeaders]; // dynamicColumnHeaders includes value and row grand total headers
+    const headers = [...rowFields, ...dynamicColumnHeaders]; 
     const csvHeaderRow = headers.map(h => `"${String(h ?? '').replace(/_/g, ' ').replace(/"/g, '""')}"`).join(',');
 
     const dataRows = summaryData.map(row => {
@@ -431,12 +419,12 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         if (cellValue === null || cellValue === undefined) {
             cellValue = "";
         } else if (typeof cellValue === 'number') {
-            cellValue = cellValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}).replace(/,/g, ''); // Use dot as decimal, remove thousands for CSV
+            cellValue = cellValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}).replace(/,/g, ''); 
         } else {
             cellValue = String(cellValue);
         }
         
-        if (cellValue.includes(',')) { // If it still contains comma (e.g. was string originally)
+        if (cellValue.includes(',')) { 
           return `"${cellValue.replace(/"/g, '""')}"`;
         }
         return cellValue;
