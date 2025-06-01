@@ -1,16 +1,21 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { LayoutGrid, Rows, Columns, Sigma, FileSpreadsheet, ChevronDown, PlusCircle, XCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { LayoutGrid, Rows, Columns, Sigma, FileSpreadsheet, ChevronDown, PlusCircle, XCircle, ListFilter, CheckSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from "@/components/ui/table";
+import { TableHeader, TableBody, TableCell, TableHead, TableRow, TableCaption } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
+
 
 interface DataSummarizationProps {
   uploadedData: Record<string, any>[];
@@ -30,7 +35,7 @@ const aggregationOptions: { value: AggregationType; label: string; numericOnly: 
 ];
 
 interface ValueFieldConfig {
-  id: string; // Unique ID for React key
+  id: string;
   field: string;
   aggregation: AggregationType;
 }
@@ -52,48 +57,94 @@ function calculateSdev(sum: number, sumOfSquares: number, countNumeric: number):
 }
 
 const MAX_ROW_FIELDS = 2;
-const MAX_COL_FIELDS = 1; // Simplified for now
+const MAX_COL_FIELDS = 1;
 const MAX_VALUE_FIELDS = 3;
 
 
 export function DataSummarization({ uploadedData, dataFields }: DataSummarizationProps) {
   const [rowFields, setRowFields] = useState<string[]>([]);
-  const [columnFields, setColumnFields] = useState<string[]>([]); // Max 1 for now
+  const [columnFields, setColumnFields] = useState<string[]>([]);
   const [valueFieldConfigs, setValueFieldConfigs] = useState<ValueFieldConfig[]>([]);
   
   const [summaryData, setSummaryData] = useState<Record<string, any>[]>([]);
   const [dynamicColumnHeaders, setDynamicColumnHeaders] = useState<string[]>([]);
   const [effectiveColumnFieldValues, setEffectiveColumnFieldValues] = useState<string[]>([]);
+  
+  const [contentFilters, setContentFilters] = useState<Record<string, Set<string>>>({});
+  const [uniqueValuesForFilterUI, setUniqueValuesForFilterUI] = useState<Record<string, { value: string; count: number }[]>>({});
+  const [showFilters, setShowFilters] = useState(false);
 
 
   const { toast } = useToast();
 
   useEffect(() => {
+    // Reset pivot config when data source changes
     setRowFields([]);
     setColumnFields([]);
     setValueFieldConfigs([]);
     setSummaryData([]);
     setDynamicColumnHeaders([]);
     setEffectiveColumnFieldValues([]);
+    
+    // Reset content filters and unique values for filter UI
+    const initialContentFilters: Record<string, Set<string>> = {};
+    dataFields.forEach(key => {
+      initialContentFilters[key] = new Set();
+    });
+    setContentFilters(initialContentFilters);
+
+    if (uploadedData.length > 0) {
+      const newUniqueValues: Record<string, { value: string; count: number }[]> = {};
+      dataFields.forEach(field => {
+        const valueMap = new Map<string, number>();
+        uploadedData.forEach(item => {
+          const cellValue = item[field];
+          const val = cellValue === null || cellValue === undefined ? "" : String(cellValue);
+          valueMap.set(val, (valueMap.get(val) || 0) + 1);
+        });
+        newUniqueValues[field] = Array.from(valueMap.entries())
+          .map(([value, count]) => ({ value, count }))
+          .sort((a, b) => a.value.localeCompare(b.value));
+      });
+      setUniqueValuesForFilterUI(newUniqueValues);
+    } else {
+      setUniqueValuesForFilterUI({});
+    }
+
   }, [uploadedData, dataFields]);
+
+  const dataForPivot = useMemo(() => {
+    if (uploadedData.length === 0) return [];
+    
+    const activeFilterKeys = Object.keys(contentFilters).filter(key => contentFilters[key].size > 0);
+    if (activeFilterKeys.length === 0) return uploadedData;
+
+    return uploadedData.filter(item => {
+      return activeFilterKeys.every(key => {
+        const selectedValues = contentFilters[key];
+        const cellValue = item[key];
+        const val = cellValue === null || cellValue === undefined ? "" : String(cellValue);
+        return selectedValues.has(val);
+      });
+    });
+  }, [uploadedData, contentFilters]);
   
   useEffect(() => {
-    if (uploadedData.length === 0 || rowFields.length === 0 || valueFieldConfigs.length === 0) {
+    if (dataForPivot.length === 0 || rowFields.length === 0 || valueFieldConfigs.length === 0) {
       setSummaryData([]);
       setDynamicColumnHeaders([]);
       setEffectiveColumnFieldValues([]);
       return;
     }
 
-    // Step 1: Group data and perform aggregations
     const groupedData = new Map<string, Map<string, AggregationState[]>>();
     const uniqueColFieldValues = new Set<string>();
 
-    uploadedData.forEach(item => {
+    dataForPivot.forEach(item => {
       const rowKey = rowFields.map(rf => String(item[rf] ?? '')).join('||');
       
-      let colKeyValue = "_TOTAL_"; // Default if no column field
-      if (columnFields.length > 0) {
+      let colKeyValue = "_TOTAL_";
+      if (columnFields.length > 0 && columnFields[0]) {
         colKeyValue = String(item[columnFields[0]] ?? '');
         uniqueColFieldValues.add(colKeyValue);
       }
@@ -119,12 +170,9 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         if (typeof originalValue === 'number') {
             numValue = originalValue;
         } else if (typeof originalValue === 'string') {
-            const parsed = parseFloat(originalValue);
-            if (!isNaN(parsed)) {
-                numValue = parsed;
-            }
+            const parsed = parseFloat(originalValue.replace(/,/g, '')); // Handle numbers with commas
+            if (!isNaN(parsed)) numValue = parsed;
         }
-
 
         state.countTotal++;
         state.uniqueValues.add(originalValue);
@@ -140,33 +188,26 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     });
 
     const sortedUniqueColFieldValues = Array.from(uniqueColFieldValues).sort();
-    setEffectiveColumnFieldValues(columnFields.length > 0 ? sortedUniqueColFieldValues : ["_TOTAL_"]);
+    setEffectiveColumnFieldValues(columnFields.length > 0 && columnFields[0] ? sortedUniqueColFieldValues : ["_TOTAL_"]);
 
-    // Step 2: Transform grouped data into flat summaryData for table rendering
     const newSummaryData: Record<string, any>[] = [];
     const newDynamicColumnHeaders: string[] = [];
 
-    if (columnFields.length > 0) {
-      sortedUniqueColFieldValues.forEach(colVal => {
+    const targetColFieldValues = columnFields.length > 0 && columnFields[0] ? sortedUniqueColFieldValues : ["_TOTAL_"];
+
+    targetColFieldValues.forEach(colVal => {
         valueFieldConfigs.forEach(vfConfig => {
-          const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-          newDynamicColumnHeaders.push(`${colVal} - ${vfConfig.field} (${aggInfo})`);
+            const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
+            const headerText = targetColFieldValues[0] === "_TOTAL_" ? `${vfConfig.field} (${aggInfo})` : `${colVal} - ${vfConfig.field} (${aggInfo})`;
+            newDynamicColumnHeaders.push(headerText);
         });
-      });
-    } else { // No column fields, headers are just value fields
-      valueFieldConfigs.forEach(vfConfig => {
-        const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-        newDynamicColumnHeaders.push(`${vfConfig.field} (${aggInfo})`);
-      });
-    }
+    });
     setDynamicColumnHeaders(newDynamicColumnHeaders);
     
     groupedData.forEach((colGroups, rowKey) => {
       const summaryRow: Record<string, any> = {};
       const rowKeyParts = rowKey.split('||');
       rowFields.forEach((rf, idx) => summaryRow[rf] = rowKeyParts[idx]);
-
-      const targetColFieldValues = columnFields.length > 0 ? sortedUniqueColFieldValues : ["_TOTAL_"];
 
       targetColFieldValues.forEach(colVal => {
         const aggStates = colGroups.get(colVal);
@@ -186,15 +227,14 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
             }
           }
           
-          const headerKeyBase = columnFields.length > 0 ? `${colVal} - ${vfConfig.field}` : vfConfig.field;
           const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-          summaryRow[`${headerKeyBase} (${aggInfo})`] = aggregatedValue;
+          const headerKey = targetColFieldValues[0] === "_TOTAL_" ? `${vfConfig.field} (${aggInfo})` : `${colVal} - ${vfConfig.field} (${aggInfo})`;
+          summaryRow[headerKey] = aggregatedValue;
         });
       });
       newSummaryData.push(summaryRow);
     });
     
-    // Sort summaryData by row fields
     newSummaryData.sort((a, b) => {
       for (const field of rowFields) {
         if (a[field] < b[field]) return -1;
@@ -203,36 +243,41 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       return 0;
     });
 
-    setSummaryData(newSummaryData.slice(0, 100)); // Limit display rows
+    setSummaryData(newSummaryData.slice(0, 100));
 
-  }, [uploadedData, rowFields, columnFields, valueFieldConfigs]);
-
+  }, [dataForPivot, rowFields, columnFields, valueFieldConfigs]);
 
   const handleDrop = (area: 'rows' | 'columns' | 'values', field: string) => {
+    const isFieldUsed = (f: string) => rowFields.includes(f) || columnFields.includes(f) || valueFieldConfigs.some(vf => vf.field === f);
+
     if (area === 'rows') {
-      if (rowFields.length < MAX_ROW_FIELDS && !rowFields.includes(field)) {
+      if (rowFields.length < MAX_ROW_FIELDS && !isFieldUsed(field)) {
         setRowFields(prev => [...prev, field]);
         toast({title: `Field Added`, description: `${field} added to Rows.`});
       } else if (rowFields.length >= MAX_ROW_FIELDS) {
         toast({title: "Limit Reached", description: `Maximum ${MAX_ROW_FIELDS} row fields allowed.`, variant: "destructive"});
+      } else if (isFieldUsed(field)){
+        toast({title: "Field In Use", description: `${field} is already used in another pivot area.`, variant: "destructive"});
       }
     } else if (area === 'columns') {
-      if (columnFields.length < MAX_COL_FIELDS && !columnFields.includes(field)) {
+      if (columnFields.length < MAX_COL_FIELDS && !isFieldUsed(field)) {
         setColumnFields(prev => [...prev, field]);
         toast({title: `Field Added`, description: `${field} added to Columns.`});
       } else if (columnFields.length >= MAX_COL_FIELDS) {
          toast({title: "Limit Reached", description: `Maximum ${MAX_COL_FIELDS} column field allowed.`, variant: "destructive"});
+      } else if (isFieldUsed(field)){
+        toast({title: "Field In Use", description: `${field} is already used in another pivot area.`, variant: "destructive"});
       }
     } else if (area === 'values') {
-      if (valueFieldConfigs.length < MAX_VALUE_FIELDS && !valueFieldConfigs.find(vf => vf.field === field)) {
-        const newId = Date.now().toString(); // simple unique id
+      if (valueFieldConfigs.length < MAX_VALUE_FIELDS && !isFieldUsed(field)) {
+        const newId = `${field}-${Date.now()}`;
         
         let initialAggregation: AggregationType = 'sum';
-        const sampleValue = uploadedData[0]?.[field];
+        const sampleValue = dataForPivot[0]?.[field];
         const aggOptionSum = aggregationOptions.find(opt => opt.value === 'sum')!;
 
-        if (aggOptionSum.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(sampleValue)))) {
-            initialAggregation = 'count'; // Switch to count if non-numeric
+        if (aggOptionSum.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(String(sampleValue).replace(/,/g, ''))))) {
+            initialAggregation = 'count';
              toast({title: "Field Type Note", description: `Field '${field}' is not strictly numeric. Defaulting aggregation to 'Count'. You can change this.`, duration: 5000});
         }
         const newFieldConfig: ValueFieldConfig = { id: newId, field, aggregation: initialAggregation };
@@ -241,25 +286,32 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
 
       } else if (valueFieldConfigs.length >= MAX_VALUE_FIELDS) {
          toast({title: "Limit Reached", description: `Maximum ${MAX_VALUE_FIELDS} value fields allowed.`, variant: "destructive"});
+      } else if (isFieldUsed(field)){
+        toast({title: "Field In Use", description: `${field} is already used in another pivot area.`, variant: "destructive"});
       }
     }
   };
 
-  const removeFromArea = (area: 'rows' | 'columns' | 'values', identifier: string) => { // identifier can be field name or ValueFieldConfig.id
+  const removeFromArea = (area: 'rows' | 'columns' | 'values', identifier: string) => {
+    let fieldName = identifier;
     if (area === 'rows') setRowFields(prev => prev.filter(f => f !== identifier));
     if (area === 'columns') setColumnFields(prev => prev.filter(f => f !== identifier));
-    if (area === 'values') setValueFieldConfigs(prev => prev.filter(vf => vf.id !== identifier));
-    toast({title: `Field Removed`, description: `${identifier.split('-')[0]} removed from ${area}.`}); // Show field name if ID
+    if (area === 'values') {
+        const configToRemove = valueFieldConfigs.find(vf => vf.id === identifier);
+        if (configToRemove) fieldName = configToRemove.field;
+        setValueFieldConfigs(prev => prev.filter(vf => vf.id !== identifier));
+    }
+    toast({title: `Field Removed`, description: `${fieldName} removed from ${area}.`});
   };
 
   const handleValueFieldAggregationChange = (id: string, newAggregation: AggregationType) => {
     setValueFieldConfigs(prev => prev.map(vf => {
       if (vf.id === id) {
         const aggOption = aggregationOptions.find(opt => opt.value === newAggregation)!;
-        const sampleValue = uploadedData[0]?.[vf.field];
-        if (aggOption.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(sampleValue)))) {
+        const sampleValue = dataForPivot[0]?.[vf.field];
+        if (aggOption.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(String(sampleValue).replace(/,/g, ''))))) {
           toast({title: "Invalid Aggregation", description: `Aggregation '${aggOption.label}' requires a numeric field. '${vf.field}' is not numeric.`, variant: "destructive", duration: 5000});
-          return vf; // Don't change if invalid
+          return vf;
         }
         return { ...vf, aggregation: newAggregation };
       }
@@ -275,7 +327,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     toast({ title: "Exporting Summary", description: "Summary table export to CSV started..." });
     
     const headers = [...rowFields, ...dynamicColumnHeaders];
-    const csvHeaderRow = headers.map(h => `"${h.replace(/_/g, ' ').replace(/"/g, '""')}"`).join(',');
+    const csvHeaderRow = headers.map(h => `"${String(h ?? '').replace(/_/g, ' ').replace(/"/g, '""')}"`).join(',');
 
     const dataRows = summaryData.map(row => {
       return headers.map(header => {
@@ -283,7 +335,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         if (cellValue === null || cellValue === undefined) {
             cellValue = "";
         } else if (typeof cellValue === 'number') {
-            cellValue = cellValue.toString(); // Convert numbers to string for CSV
+            cellValue = cellValue.toString();
         } else {
             cellValue = String(cellValue);
         }
@@ -313,6 +365,33 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     return "";
   }
 
+  const handleContentFilterChange = (columnKey: string, value: string, isChecked: boolean) => {
+    setContentFilters(prev => {
+      const newFilters = { ...prev };
+      const currentSet = new Set(newFilters[columnKey] || []);
+      if (isChecked) {
+        currentSet.add(value);
+      } else {
+        currentSet.delete(value);
+      }
+      newFilters[columnKey] = currentSet;
+      return newFilters;
+    });
+  };
+
+  const handleSelectAllContentValues = (columnKey: string) => {
+    const allValues = new Set(uniqueValuesForFilterUI[columnKey]?.map(uv => uv.value) || []);
+    setContentFilters(prev => ({ ...prev, [columnKey]: allValues }));
+  };
+
+  const handleUnselectAllContentValues = (columnKey: string) => {
+    setContentFilters(prev => ({ ...prev, [columnKey]: new Set() }));
+  };
+
+  const activeFilterCount = Object.values(contentFilters).reduce((acc, columnSet) => acc + (columnSet.size > 0 ? 1 : 0), 0);
+  const availableFieldsForPivot = dataFields.filter(f => !rowFields.includes(f) && !columnFields.includes(f) && !valueFieldConfigs.some(vf => vf.field === f));
+
+
   if (uploadedData.length === 0) {
     return (
       <Card className="bg-card/80 backdrop-blur-sm shadow-xl">
@@ -337,26 +416,101 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
           <LayoutGrid className="text-primary" />
           Summarize Your Data (Pivot View)
         </CardTitle>
-        <CardDescription>Drag fields to Row, Column (Max {MAX_COL_FIELDS}), or Value areas. Max {MAX_ROW_FIELDS} Row fields, Max {MAX_VALUE_FIELDS} Value fields.</CardDescription>
+        <CardDescription>Filter data, then drag fields to Row, Column (Max {MAX_COL_FIELDS}), or Value areas. Max {MAX_ROW_FIELDS} Row fields, Max {MAX_VALUE_FIELDS} Value fields.</CardDescription>
       </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card className="md:col-span-1 bg-background/50 max-h-96 overflow-y-auto">
-            <CardHeader>
+      <CardContent className="space-y-6">
+        
+        {/* Pre-Aggregation Filters Section */}
+        <Card className="bg-background/30">
+          <CardHeader className="p-4">
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-lg font-semibold flex items-center gap-2">
+                <ListFilter className="text-accent" /> Data Filters <span className="text-xs text-muted-foreground">(Applied before summarization)</span>
+              </CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowFilters(!showFilters)}>
+                {showFilters ? 'Hide Filters' : `Show Filters ${activeFilterCount > 0 ? `(${activeFilterCount} active)` : ''}`}
+                <ChevronDown className={`ml-2 h-4 w-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+              </Button>
+            </div>
+          </CardHeader>
+          {showFilters && (
+            <CardContent className="p-4 pt-0">
+              <Accordion type="multiple" className="w-full">
+                {dataFields.map(fieldKey => {
+                  const uniqueValues = uniqueValuesForFilterUI[fieldKey] || [];
+                  const activeFiltersInColumn = contentFilters[fieldKey]?.size || 0;
+                  return (
+                    <AccordionItem value={fieldKey} key={`filter-${fieldKey}`}>
+                      <AccordionTrigger className="text-sm hover:no-underline py-2">
+                        <div className="flex justify-between w-full items-center">
+                          <span className="capitalize truncate pr-2">{fieldKey.replace(/_/g, ' ')}</span>
+                          {activeFiltersInColumn > 0 && <Badge variant="secondary" className="text-xs">{activeFiltersInColumn} selected</Badge>}
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="pb-0">
+                        <div className="p-2 border-t">
+                          <div className="flex justify-between mb-2">
+                            <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleSelectAllContentValues(fieldKey)}>Select All ({uniqueValues.length})</Button>
+                            <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => handleUnselectAllContentValues(fieldKey)}>Unselect All</Button>
+                          </div>
+                          <ScrollArea className="h-40">
+                            <div className="space-y-1 pr-3">
+                              {uniqueValues.map(({ value, count }) => (
+                                <Label key={value} className="flex items-center space-x-2 p-1 rounded hover:bg-muted/50 text-xs font-normal">
+                                  <Checkbox
+                                    checked={contentFilters[fieldKey]?.has(value) || false}
+                                    onCheckedChange={(checked) => handleContentFilterChange(fieldKey, value, !!checked)}
+                                    id={`content-filter-${fieldKey}-${value.replace(/\s+/g, '-')}`}
+                                  />
+                                  <span className="flex-grow truncate" title={value}>{value || "(empty)"}</span>
+                                  <span className="text-muted-foreground">({count})</span>
+                                </Label>
+                              ))}
+                              {uniqueValues.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No filterable values.</p>}
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  );
+                })}
+              </Accordion>
+               <p className="text-xs text-muted-foreground mt-2 text-center">Filtered data for pivot: {dataForPivot.length} rows out of {uploadedData.length}.</p>
+            </CardContent>
+          )}
+        </Card>
+        
+        <Separator />
+
+        {/* Pivot Configuration Section */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <Card className="md:col-span-1 bg-background/50 max-h-96">
+            <CardHeader className="pb-2">
               <CardTitle className="text-lg font-semibold">Available Fields</CardTitle>
+              <CardDescription className="text-xs">Drag to pivot areas. Fields in use are disabled.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-1 p-2">
-              {dataFields.map(field => (
+             <ScrollArea className="h-72">
+              {dataFields.map(field => {
+                const isUsed = rowFields.includes(field) || columnFields.includes(field) || valueFieldConfigs.some(vf => vf.field === field);
+                return(
                 <Badge 
                   key={field} 
-                  variant="secondary" 
-                  className="cursor-grab p-2 text-sm mr-1 mb-1 capitalize hover:bg-primary/20"
-                  draggable
-                  onDragStart={(e) => e.dataTransfer.setData('text/plain', field)}
+                  variant={isUsed ? "outline" : "secondary"}
+                  className={cn(
+                    "cursor-grab p-2 text-sm mr-1 mb-1 capitalize hover:bg-primary/20",
+                    isUsed && "opacity-50 cursor-not-allowed line-through"
+                  )}
+                  draggable={!isUsed}
+                  onDragStart={(e) => { if(!isUsed) e.dataTransfer.setData('text/plain', field); else e.preventDefault();}}
+                  title={isUsed ? `${field} is already in use` : `Drag ${field}`}
                 >
                   {field.replace(/_/g, ' ')}
                 </Badge>
-              ))}
+                );
+              })}
+              {dataFields.length === 0 && <p className="text-xs text-muted-foreground p-2">No fields available.</p>}
+             </ScrollArea>
             </CardContent>
           </Card>
 
@@ -433,30 +587,20 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
           </div>
         </div>
         
-        <h3 className="font-headline text-xl mb-4 text-primary-foreground">Summary Table</h3>
+        <Separator />
+        
+        <h3 className="font-headline text-xl text-primary-foreground">Summary Table</h3>
         <div className="w-full overflow-x-auto rounded-md border max-h-[70vh]">
-          <Table className="min-w-max">
+          <table className="min-w-max caption-bottom text-sm">
             <TableCaption>
-              {summaryData.length > 0 ? `Displaying first ${Math.min(summaryData.length, 100)} summary rows.` : "Configure fields to see summary."}
+              {summaryData.length > 0 ? `Displaying first ${Math.min(summaryData.length, 100)} summary rows from ${dataForPivot.length} filtered rows.` : "Configure fields and filters to see summary."}
             </TableCaption>
             <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow className="hover:bg-muted/20">
                 {rowFields.map(rf => <TableHead key={rf} className="capitalize whitespace-nowrap">{rf.replace(/_/g, ' ')}</TableHead>)}
-                {columnFields.length > 0 && effectiveColumnFieldValues[0] !== '_TOTAL_' ? (
-                    effectiveColumnFieldValues.map(colVal => (
-                        valueFieldConfigs.map(vfConfig => {
-                            const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-                            const headerText = `${colVal} - ${vfConfig.field} (${aggInfo})`;
-                            return <TableHead key={headerText} className="text-right capitalize whitespace-nowrap">{headerText.replace(/_/g, ' ')}</TableHead>;
-                        })
-                    ))
-                ) : (
-                    valueFieldConfigs.map(vfConfig => {
-                        const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-                        const headerText = `${vfConfig.field} (${aggInfo})`;
-                         return <TableHead key={headerText} className="text-right capitalize whitespace-nowrap">{headerText.replace(/_/g, ' ')}</TableHead>;
-                    })
-                )}
+                {dynamicColumnHeaders.map(dh => (
+                    <TableHead key={dh} className="text-right capitalize whitespace-nowrap">{String(dh ?? '').replace(/_/g, ' ')}</TableHead>
+                ))}
                  {(rowFields.length === 0 || valueFieldConfigs.length === 0) && <TableHead>Configuration Needed</TableHead>}
               </TableRow>
             </TableHeader>
@@ -476,20 +620,21 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
               {summaryData.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={rowFields.length + dynamicColumnHeaders.length || 1} className="h-24 text-center text-muted-foreground">
-                    { (rowFields.length > 0 && valueFieldConfigs.length > 0) ? "No summary data to display for current configuration." : "Please select Row and Value fields."}
+                    { (dataForPivot.length > 0 && rowFields.length > 0 && valueFieldConfigs.length > 0) ? "No summary data for current configuration/filters." : "Please select Row and Value fields, and adjust filters if needed."}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
-          </Table>
+          </table>
         </div>
-        <div className="mt-6 flex justify-end">
+        <CardFooter className="mt-6 flex justify-end p-0">
             <Button onClick={handleExport} className="bg-accent hover:bg-accent/90 text-accent-foreground" disabled={summaryData.length === 0}>
               <FileSpreadsheet className="mr-2 h-4 w-4" /> Export Summary
             </Button>
-        </div>
+        </CardFooter>
       </CardContent>
     </Card>
   );
 }
 
+    
