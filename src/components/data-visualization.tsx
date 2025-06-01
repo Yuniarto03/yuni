@@ -31,7 +31,7 @@ const chartIcons: Record<ChartType, React.ElementType> = {
 };
 
 const aggregationOptions: { value: AggregationType; label: string; numericOnly: boolean }[] = [
-  { value: 'count', label: 'Count', numericOnly: false },
+  { value: 'count', label: 'Count (Non-Empty)', numericOnly: false },
   { value: 'sum', label: 'Sum', numericOnly: true },
   { value: 'average', label: 'Average', numericOnly: true },
   { value: 'min', label: 'Min', numericOnly: true },
@@ -80,7 +80,11 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
   const numericFields = useMemo(() => {
     if (uploadedData.length === 0) return [];
-    return dataFields.filter(field => typeof uploadedData[0][field] === 'number' && uploadedData.every(d => typeof d[field] === 'number' || d[field] === null || d[field] === undefined));
+    return dataFields.filter(field => {
+      const firstNonEmptyValue = uploadedData.find(d => d[field] !== null && d[field] !== undefined)?.[field];
+      if (firstNonEmptyValue === null || firstNonEmptyValue === undefined) return false; // if all are empty, not numeric
+      return typeof firstNonEmptyValue === 'number' && uploadedData.every(d => d[field] === null || d[field] === undefined || typeof d[field] === 'number');
+    });
   }, [uploadedData, dataFields]);
 
   const categoricalFields = useMemo(() => {
@@ -88,7 +92,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     return dataFields.filter(field => {
       if (numericFields.includes(field)) return false;
       const uniqueValues = new Set(uploadedData.map(d => d[field]));
-      return uniqueValues.size <= 50 || typeof uploadedData[0][field] === 'string';
+      return uniqueValues.size <= 50 || typeof uploadedData.find(d=>d[field] !== null && d[field] !== undefined)?.[field] === 'string';
     });
   }, [uploadedData, dataFields, numericFields]);
 
@@ -97,25 +101,41 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     return dataFields;
   };
 
-  useEffect(() => {
+  const setDefaultFields = useCallback((
+    _chartType: ChartType,
+    setX: (val: string | undefined) => void,
+    setY1: (val: string | undefined) => void,
+    setY2: (val: string | undefined) => void,
+    currentX?: string, currentY1?: string, currentY2?: string
+  ) => {
     if (dataFields.length > 0) {
-      const defaultX1 = getXAxisOptions(chart1Type)[0] || dataFields[0];
-      const defaultX2 = getXAxisOptions(chart2Type)[0] || dataFields[0];
-      setChart1XAxisField(defaultX1);
-      setChart2XAxisField(defaultX2);
+      const newXOptions = getXAxisOptions(_chartType);
+      if (!currentX || !newXOptions.includes(currentX)) {
+        setX(newXOptions[0] || dataFields[0]);
+      }
 
-      const defaultY1_1 = numericFields[0] || undefined;
-      setChart1YAxisField1(defaultY1_1);
-      setChart1YAxisField2(numericFields.filter(f => f !== defaultY1_1)[0] || undefined);
+      if (!currentY1 || !dataFields.includes(currentY1)) {
+        setY1(numericFields[0] || undefined);
+      }
       
-      const defaultY2_1 = numericFields[0] || undefined;
-      setChart2YAxisField1(defaultY2_1);
-      setChart2YAxisField2(numericFields.filter(f => f !== defaultY2_1)[0] || undefined);
+      const availableY2 = numericFields.filter(f => f !== (currentY1 || numericFields[0]));
+      if (!currentY2 || !availableY2.includes(currentY2)) {
+         setY2(availableY2[0] || undefined);
+      }
+
     } else {
-      [setChart1XAxisField, setChart1YAxisField1, setChart1YAxisField2, 
-       setChart2XAxisField, setChart2YAxisField1, setChart2YAxisField2].forEach(f => f(undefined));
+      [setX, setY1, setY2].forEach(f => f(undefined));
     }
-  }, [dataFields, numericFields, chart1Type, chart2Type]); // Re-run if chart types change
+  }, [dataFields, numericFields, categoricalFields]); // getXAxisOptions relies on categoricalFields which relies on numericFields
+
+  useEffect(() => {
+    setDefaultFields(chart1Type, setChart1XAxisField, setChart1YAxisField1, setChart1YAxisField2, chart1XAxisField, chart1YAxisField1, chart1YAxisField2);
+  }, [dataFields, numericFields, chart1Type, setDefaultFields]);
+
+  useEffect(() => {
+    setDefaultFields(chart2Type, setChart2XAxisField, setChart2YAxisField1, setChart2YAxisField2, chart2XAxisField, chart2YAxisField1, chart2YAxisField2);
+  }, [dataFields, numericFields, chart2Type, setDefaultFields]);
+
 
   const processAggregatedData = useCallback((
     data: Record<string, any>[],
@@ -126,14 +146,20 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     yAgg2: AggregationType,
     chartTypeForProcessing: ChartType
   ): any[] => {
-    if (!xField || data.length === 0 || (!yField1 && chartTypeForProcessing !== 'pie' && chartTypeForProcessing !== 'radar' ) ) { // Pie/Radar can work with just X for counting categories
-        if(chartTypeForProcessing === 'pie' && xField && yField1 && yAgg1 === 'count'){ // Special case for pie chart: count categories
+    if (!xField || data.length === 0 || (!yField1 && chartTypeForProcessing !== 'pie' && chartTypeForProcessing !== 'radar' && !(yAgg1 === 'count' && chartTypeForProcessing !== 'scatter' )) ) {
+        if(chartTypeForProcessing === 'pie' && xField && yAgg1 === 'count'){
              const categoryCounts: Record<string, number> = {};
              data.forEach(item => {
-                 const category = String(item[xField] ?? 'N/A');
-                 categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                 const categoryValue = item[xField];
+                 if (categoryValue !== null && categoryValue !== undefined && String(categoryValue).trim() !== "") {
+                    const category = String(categoryValue);
+                    categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                 }
              });
-             return Object.entries(categoryCounts).map(([name, value]) => ({ [xField]: name, [yField1]: value })).slice(0, 10);
+             // For pie chart, yField1 is used as dataKey, so we need to ensure it's present
+             // We can use a placeholder name if yField1 is not selected but agg is count
+             const effectiveYField1 = yField1 || 'count';
+             return Object.entries(categoryCounts).map(([name, value]) => ({ [xField]: name, [effectiveYField1]: value })).slice(0, 10);
         }
         return [];
     }
@@ -148,33 +174,48 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     }> = {};
 
     data.forEach(item => {
-      const xValue = String(item[xField] ?? 'N/A');
+      const xValue = String(item[xField] ?? 'N/A'); // Treat null/undefined X-values as 'N/A' category
       if (!groupedData[xValue]) {
         groupedData[xValue] = { values1: [], values2: [], numericValues1: [], numericValues2: [], uniqueSet1: new Set(), uniqueSet2: new Set() };
       }
       if (yField1) {
         groupedData[xValue].values1.push(item[yField1]);
-        groupedData[xValue].uniqueSet1.add(item[yField1]);
-        const numVal1 = parseFloat(String(item[yField1]));
+        groupedData[xValue].uniqueSet1.add(item[yField1]); // Still add all for uniqueSet if needed by uniqueCount
+        const numVal1 = parseFloat(String(item[yField1]).replace(/,/g, '')); // Handle potential commas in string numbers
         if (!isNaN(numVal1)) groupedData[xValue].numericValues1.push(numVal1);
+      } else if (yAgg1 === 'count') { // if yField1 is not selected but agg is count, push a placeholder for counting non-empty x-values
+        groupedData[xValue].values1.push(item[xField]); // The value itself doesn't matter, only its presence
       }
+
       if (yField2) {
         groupedData[xValue].values2.push(item[yField2]);
         groupedData[xValue].uniqueSet2.add(item[yField2]);
-        const numVal2 = parseFloat(String(item[yField2]));
+        const numVal2 = parseFloat(String(item[yField2]).replace(/,/g, ''));
         if (!isNaN(numVal2)) groupedData[xValue].numericValues2.push(numVal2);
+      } else if (yAgg2 === 'count') {
+         groupedData[xValue].values2.push(item[xField]);
       }
     });
 
     const aggregate = (values: any[], numericValues: number[], uniqueSet: Set<any>, aggType: AggregationType): number | string => {
+      const validValuesForCount = values.filter(v => v !== null && v !== undefined && String(v).trim() !== "");
+      
       if (numericValues.length === 0 && aggType !== 'count' && aggType !== 'uniqueCount') return 0;
+      
       switch (aggType) {
-        case 'count': return values.length;
+        case 'count': return validValuesForCount.length;
         case 'sum': return numericValues.reduce((s, a) => s + a, 0);
         case 'average': return numericValues.length > 0 ? numericValues.reduce((s, a) => s + a, 0) / numericValues.length : 0;
         case 'min': return numericValues.length > 0 ? Math.min(...numericValues) : 0;
         case 'max': return numericValues.length > 0 ? Math.max(...numericValues) : 0;
-        case 'uniqueCount': return uniqueSet.size;
+        case 'uniqueCount': 
+          const validUniqueSet = new Set();
+          uniqueSet.forEach(v => {
+            if (v !== null && v !== undefined && String(v).trim() !== "") {
+              validUniqueSet.add(v);
+            }
+          });
+          return validUniqueSet.size;
         case 'sdev':
           if (numericValues.length < 2) return 0;
           const mean = numericValues.reduce((s, a) => s + a, 0) / numericValues.length;
@@ -186,16 +227,26 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     
     let result = Object.entries(groupedData).map(([xValue, group]) => {
       const aggregated: Record<string, any> = { [xField]: xValue };
-      if (yField1) aggregated[yField1] = aggregate(group.values1, group.numericValues1, group.uniqueSet1, yAgg1);
-      if (yField2) aggregated[yField2] = aggregate(group.values2, group.numericValues2, group.uniqueSet2, yAgg2);
+      const effectiveYField1 = yField1 || (yAgg1 === 'count' ? 'count' : 'value1'); // Use 'count' if yField1 is null and agg is count
+      const effectiveYField2 = yField2 || (yAgg2 === 'count' ? 'count2' : 'value2');
+
+      aggregated[effectiveYField1] = aggregate(group.values1, group.numericValues1, group.uniqueSet1, yAgg1);
+      
+      if (yField2 || yAgg2 === 'count') { // Ensure second aggregation is processed if yField2 is selected OR if yAgg2 is 'count' (even if yField2 is not selected)
+         aggregated[effectiveYField2] = aggregate(group.values2, group.numericValues2, group.uniqueSet2, yAgg2);
+      }
       return aggregated;
     });
 
-    if (chartTypeForProcessing === 'pie' && yField1) {
-        return result.slice(0, 10); // Pie chart data limit
+    if (chartTypeForProcessing === 'pie' && xField && yAgg1 === 'count' && yField1) { // check yField1 for pie dataKey
+        // Data already prepared if it's count of categories
     }
-    if (chartTypeForProcessing === 'radar') {
-        return result.slice(0, 8); // Radar chart data limit
+    
+    if (chartTypeForProcessing === 'pie') { // Limit for pie
+        return result.slice(0, 10);
+    }
+    if (chartTypeForProcessing === 'radar') { // Limit for radar
+        return result.slice(0, 8);
     }
     
     return result.slice(0, 100); // General data limit
@@ -211,18 +262,28 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
   }, [uploadedData, chart2XAxisField, chart2YAxisField1, chart2YAxisAggregation1, chart2YAxisField2, chart2YAxisAggregation2, chart2Type, processAggregatedData]);
 
 
-  const getChartConfig = (yField1?: string, yField2?: string, themeKey: ChartThemeKey = 'default'): ChartConfig => {
+  const getChartConfig = (yField1?: string, yField2?: string, themeKey: ChartThemeKey = 'default', yAgg1?: AggregationType, yAgg2?: AggregationType): ChartConfig => {
     const themeColors = chartThemes[themeKey] || chartThemes.default;
     const config: ChartConfig = {};
-    if (yField1) config[yField1] = { label: yField1.replace(/_/g, ' '), color: themeColors['1'] };
-    if (yField2 && yField2 !== yField1) config[yField2] = { label: yField2.replace(/_/g, ' '), color: themeColors['2'] };
-    // For Pie chart, if yField1 is 'count', use xField as label in legend. This is a bit of a hack for current structure.
-    // This might need more robust handling if pie chart needs different field for labels vs values.
+    
+    const effectiveYField1 = yField1 || (yAgg1 === 'count' ? 'count' : undefined);
+    const effectiveYField2 = yField2 || (yAgg2 === 'count' ? 'count2' : undefined);
+
+    if (effectiveYField1) {
+      const label1 = effectiveYField1.replace(/_/g, ' ');
+      const aggLabel1 = aggregationOptions.find(a => a.value === yAgg1)?.label || yAgg1;
+      config[effectiveYField1] = { label: `${label1}${yAgg1 !== 'count' || yField1 ? ` (${aggLabel1})` : ''}`, color: themeColors['1'] };
+    }
+    if (effectiveYField2 && effectiveYField2 !== effectiveYField1) {
+      const label2 = effectiveYField2.replace(/_/g, ' ');
+      const aggLabel2 = aggregationOptions.find(a => a.value === yAgg2)?.label || yAgg2;
+      config[effectiveYField2] = { label: `${label2}${yAgg2 !== 'count' || yField2 ? ` (${aggLabel2})` : ''}`, color: themeColors['2'] };
+    }
     return config;
   };
 
-  const chart1Config = useMemo(() => getChartConfig(chart1YAxisField1, chart1YAxisField2, chart1Theme), [chart1YAxisField1, chart1YAxisField2, chart1Theme]);
-  const chart2Config = useMemo(() => getChartConfig(chart2YAxisField1, chart2YAxisField2, chart2Theme), [chart2YAxisField1, chart2YAxisField2, chart2Theme]);
+  const chart1Config = useMemo(() => getChartConfig(chart1YAxisField1, chart1YAxisField2, chart1Theme, chart1YAxisAggregation1, chart1YAxisAggregation2), [chart1YAxisField1, chart1YAxisField2, chart1Theme, chart1YAxisAggregation1, chart1YAxisAggregation2]);
+  const chart2Config = useMemo(() => getChartConfig(chart2YAxisField1, chart2YAxisField2, chart2Theme, chart2YAxisAggregation1, chart2YAxisAggregation2), [chart2YAxisField1, chart2YAxisField2, chart2Theme, chart2YAxisAggregation1, chart2YAxisAggregation2]);
 
   const canVisualize = uploadedData.length > 0 && dataFields.length > 0;
 
@@ -234,21 +295,30 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     yAxisField2: string | undefined,
     chartConfigObj: ChartConfig,
     yAgg1: AggregationType,
-    yAgg2: AggregationType
+    yAgg2: AggregationType,
+    chartNum: 1 | 2
   ) => {
+    const effectiveYField1 = yAxisField1 || (yAgg1 === 'count' ? 'count' : undefined);
+    const effectiveYField2 = yAxisField2 || (yAgg2 === 'count' ? 'count2' : undefined);
+
     if (!canVisualize) {
       return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">No data uploaded. Please upload a file in the 'Upload Data' section.</p>;
     }
-    if (!xAxisField || !yAxisField1 || displayData.length === 0) {
-        if (chartType === 'pie' && xAxisField && displayData.length > 0 && yAxisField1 && yAgg1 === 'count') {
+    if (!xAxisField || !effectiveYField1 || displayData.length === 0) {
+        if (chartType === 'pie' && xAxisField && displayData.length > 0 && effectiveYField1 && yAgg1 === 'count') {
             // Allow pie chart with category counts
         } else {
-             return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Please select valid X and Y axis fields. Ensure Y axis field is numeric or aggregation is 'Count'/'Unique Count'. Chart data may be limited.</p>;
+             return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Please select valid X and Y axis fields. Ensure Y axis field is numeric or aggregation is 'Count (Non-Empty)'/'Unique Count'. Chart data may be limited.</p>;
         }
     }
     
-    const effectiveYLabel1 = yAxisField1 ? `${yAxisField1.replace(/_/g, ' ')} (${aggregationOptions.find(a=>a.value === yAgg1)?.label || yAgg1})` : "";
-    const effectiveYLabel2 = yAxisField2 ? `${yAxisField2.replace(/_/g, ' ')} (${aggregationOptions.find(a=>a.value === yAgg2)?.label || yAgg2})` : "";
+    const yLabel1Base = yAxisField1 ? yAxisField1.replace(/_/g, ' ') : (yAgg1 === 'count' ? 'Count' : '');
+    const aggLabel1 = aggregationOptions.find(a=>a.value === yAgg1)?.label || yAgg1;
+    const finalYLabel1 = `${yLabel1Base}${yAgg1 !== 'count' || yAxisField1 ? ` (${aggLabel1})` : ''}`;
+
+    const yLabel2Base = yAxisField2 ? yAxisField2.replace(/_/g, ' ') : (yAgg2 === 'count' ? 'Count' : '');
+    const aggLabel2 = aggregationOptions.find(a=>a.value === yAgg2)?.label || yAgg2;
+    const finalYLabel2 = `${yLabel2Base}${yAgg2 !== 'count' || yAxisField2 ? ` (${aggLabel2})` : ''}`;
 
 
     const commonXAxisProps = {
@@ -273,85 +343,85 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
       case 'bar':
         return (
           <ResponsiveContainer width="100%" height="100%">
-            <ReBarChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 30 }}>
+            <ReBarChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
               <XAxis {...commonXAxisProps}>
-                <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={0} position="insideBottom" />
+                <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={5} position="insideBottom" />
               </XAxis>
-              <YAxis {...commonYAxisProps1} label={{ value: effectiveYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
-              {yAxisField2 && <YAxis {...commonYAxisProps2} label={{ value: effectiveYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>}
+              <YAxis {...commonYAxisProps1} label={{ value: finalYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
+              {effectiveYField2 && <YAxis {...commonYAxisProps2} label={{ value: finalYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>}
               <RechartsTooltip content={<ChartTooltipContent />} />
               <ChartLegend content={<ChartLegendContent />} />
-              {yAxisField1 && <Bar dataKey={yAxisField1} fill={`var(--color-${yAxisField1})`} radius={4} name={effectiveYLabel1} />}
-              {yAxisField2 && yAxisField2 !== yAxisField1 && <Bar yAxisId="right" dataKey={yAxisField2} fill={`var(--color-${yAxisField2})`} radius={4} name={effectiveYLabel2} />}
+              {effectiveYField1 && <Bar dataKey={effectiveYField1} fill={`var(--color-${effectiveYField1})`} radius={4} name={chartConfigObj[effectiveYField1]?.label as string || finalYLabel1} />}
+              {effectiveYField2 && effectiveYField2 !== effectiveYField1 && <Bar yAxisId="right" dataKey={effectiveYField2} fill={`var(--color-${effectiveYField2})`} radius={4} name={chartConfigObj[effectiveYField2]?.label as string || finalYLabel2} />}
             </ReBarChart>
           </ResponsiveContainer>
         );
       case 'line':
         return (
           <ResponsiveContainer width="100%" height="100%">
-            <ReLineChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 30 }}>
+            <ReLineChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
               <XAxis {...commonXAxisProps}>
-                 <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={0} position="insideBottom" />
+                 <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={5} position="insideBottom" />
               </XAxis>
-              <YAxis {...commonYAxisProps1} label={{ value: effectiveYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
-              {yAxisField2 && <YAxis {...commonYAxisProps2} label={{ value: effectiveYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>}
+              <YAxis {...commonYAxisProps1} label={{ value: finalYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
+              {effectiveYField2 && <YAxis {...commonYAxisProps2} label={{ value: finalYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>}
               <RechartsTooltip content={<ChartTooltipContent />} />
               <ChartLegend content={<ChartLegendContent />} />
-              {yAxisField1 && <Line type="monotone" dataKey={yAxisField1} stroke={`var(--color-${yAxisField1})`} name={effectiveYLabel1} connectNulls={true} />}
-              {yAxisField2 && yAxisField2 !== yAxisField1 && <Line yAxisId="right" type="monotone" dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} name={effectiveYLabel2} connectNulls={true} />}
+              {effectiveYField1 && <Line type="monotone" dataKey={effectiveYField1} stroke={`var(--color-${effectiveYField1})`} name={chartConfigObj[effectiveYField1]?.label as string || finalYLabel1} connectNulls={true} />}
+              {effectiveYField2 && effectiveYField2 !== effectiveYField1 && <Line yAxisId="right" type="monotone" dataKey={effectiveYField2} stroke={`var(--color-${effectiveYField2})`} name={chartConfigObj[effectiveYField2]?.label as string || finalYLabel2} connectNulls={true} />}
             </ReLineChart>
           </ResponsiveContainer>
         );
       case 'area':
         return (
           <ResponsiveContainer width="100%" height="100%">
-            <ReAreaChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 30 }}>
+            <ReAreaChart data={displayData} margin={{ top: 20, right: 30, left: 20, bottom: 40 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
               <XAxis {...commonXAxisProps}>
-                <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={0} position="insideBottom" />
+                <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={5} position="insideBottom" />
               </XAxis>
-              <YAxis {...commonYAxisProps1} label={{ value: effectiveYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
-              {yAxisField2 && <YAxis {...commonYAxisProps2} label={{ value: effectiveYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>}
+              <YAxis {...commonYAxisProps1} label={{ value: finalYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
+              {effectiveYField2 && <YAxis {...commonYAxisProps2} label={{ value: finalYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>}
               <RechartsTooltip content={<ChartTooltipContent />} />
               <ChartLegend content={<ChartLegendContent />} />
-              {yAxisField1 && <Area type="monotone" dataKey={yAxisField1} stroke={`var(--color-${yAxisField1})`} fill={`var(--color-${yAxisField1})`} fillOpacity={0.4} name={effectiveYLabel1} connectNulls={true} />}
-              {yAxisField2 && yAxisField2 !== yAxisField1 && <Area yAxisId="right" type="monotone" dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} fill={`var(--color-${yAxisField2})`} fillOpacity={0.4} name={effectiveYLabel2} connectNulls={true} />}
+              {effectiveYField1 && <Area type="monotone" dataKey={effectiveYField1} stroke={`var(--color-${effectiveYField1})`} fill={`var(--color-${effectiveYField1})`} fillOpacity={0.4} name={chartConfigObj[effectiveYField1]?.label as string || finalYLabel1} connectNulls={true} />}
+              {effectiveYField2 && effectiveYField2 !== effectiveYField1 && <Area yAxisId="right" type="monotone" dataKey={effectiveYField2} stroke={`var(--color-${effectiveYField2})`} fill={`var(--color-${effectiveYField2})`} fillOpacity={0.4} name={chartConfigObj[effectiveYField2]?.label as string || finalYLabel2} connectNulls={true} />}
             </ReAreaChart>
           </ResponsiveContainer>
         );
       case 'pie':
-         if (!xAxisField || !yAxisField1 || displayData.length === 0) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Pie chart requires X-Axis (category) and Y-Axis (value or count aggregation).</p>;
+         if (!xAxisField || !effectiveYField1 || displayData.length === 0) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Pie chart requires X-Axis (category) and Y-Axis (value or count aggregation).</p>;
         return (
           <ResponsiveContainer width="100%" height="100%">
             <RePieChart margin={{ top: 20, right: 20, bottom: 40, left: 20 }}>
               <RechartsTooltip content={<ChartTooltipContent />} />
-              <Pie data={displayData} dataKey={yAxisField1} nameKey={xAxisField} cx="50%" cy="50%" outerRadius={Math.min(120, window.innerHeight / 5)} fill={`var(--color-${yAxisField1})`} labelLine={false} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} />
+              <Pie data={displayData} dataKey={effectiveYField1} nameKey={xAxisField} cx="50%" cy="50%" outerRadius={Math.min(120, window.innerHeight / 5)} fill={`var(--color-${effectiveYField1})`} labelLine={false} label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`} />
               <ChartLegend content={<ChartLegendContent wrapperStyle={{ fontSize: '10px' }} />} />
             </RePieChart>
           </ResponsiveContainer>
         );
       case 'scatter':
-        if (!yAxisField2) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Scatter plot requires a second numeric Y-axis field (Y-Axis 2).</p>;
+        if (!effectiveYField2) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Scatter plot requires a second numeric Y-axis field (Y-Axis 2).</p>;
         return (
           <ResponsiveContainer width="100%" height="100%">
-            <ReScatterChart margin={{ top: 20, right: 40, bottom: 30, left: 30 }}>
+            <ReScatterChart margin={{ top: 20, right: 40, bottom: 40, left: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border)/0.5)" />
               <XAxis type="category" {...commonXAxisProps}>
-                 <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={0} position="insideBottom" />
+                 <RechartsLabel value={xAxisField?.replace(/_/g, ' ')} offset={5} position="insideBottom" />
               </XAxis>
-              <YAxis type="number" dataKey={yAxisField1} {...commonYAxisProps1} label={{ value: effectiveYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
-              <YAxis yAxisId="right" type="number" dataKey={yAxisField2} orientation="right" stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} label={{ value: effectiveYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>
+              <YAxis type="number" dataKey={effectiveYField1} {...commonYAxisProps1} label={{ value: finalYLabel1, angle: -90, position: 'insideLeft', style: {textAnchor: 'middle', fontSize: '12px'}, dy: 40 }}/>
+              <YAxis yAxisId="right" type="number" dataKey={effectiveYField2} orientation="right" stroke="hsl(var(--muted-foreground))" tick={{fontSize: 10}} label={{ value: finalYLabel2, angle: -90, position: 'insideRight', style: {textAnchor: 'middle', fontSize: '12px'}, dy: -40 }}/>
               <RechartsTooltip content={<ChartTooltipContent />} cursor={{ strokeDasharray: '3 3' }} />
               <ChartLegend content={<ChartLegendContent />} />
-              {yAxisField1 && <Scatter name={effectiveYLabel1} data={displayData} fill={`var(--color-${yAxisField1})`} />}
-              {yAxisField2 && <Scatter yAxisId="right" name={effectiveYLabel2} data={displayData} fill={`var(--color-${yAxisField2})`} />}
+              {effectiveYField1 && <Scatter name={chartConfigObj[effectiveYField1]?.label as string || finalYLabel1} data={displayData} fill={`var(--color-${effectiveYField1})`} />}
+              {effectiveYField2 && <Scatter yAxisId="right" name={chartConfigObj[effectiveYField2]?.label as string || finalYLabel2} data={displayData} fill={`var(--color-${effectiveYField2})`} />}
             </ReScatterChart>
           </ResponsiveContainer>
         );
       case 'radar':
-        if (!xAxisField || !yAxisField1 || displayData.length === 0) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Radar chart requires X-Axis (category) and Y-Axis (value).</p>;
+        if (!xAxisField || !effectiveYField1 || displayData.length === 0) return <p className="text-muted-foreground text-center p-10 h-full flex items-center justify-center">Radar chart requires X-Axis (category) and Y-Axis (value).</p>;
         return (
           <ResponsiveContainer width="100%" height="100%">
             <ReRadarChart cx="50%" cy="50%" outerRadius="70%" data={displayData}>
@@ -359,8 +429,8 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
               <PolarAngleAxis dataKey={xAxisField} stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 10 }} />
               <PolarRadiusAxis angle={30} domain={[0, 'auto']} stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 10 }} />
               <RechartsTooltip content={<ChartTooltipContent />} />
-              {yAxisField1 && <ReRadar name={effectiveYLabel1} dataKey={yAxisField1} stroke={`var(--color-${yAxisField1})`} fill={`var(--color-${yAxisField1})`} fillOpacity={0.6} />}
-              {yAxisField2 && yAxisField2 !== yAxisField1 && <ReRadar name={effectiveYLabel2} dataKey={yAxisField2} stroke={`var(--color-${yAxisField2})`} fill={`var(--color-${yAxisField2})`} fillOpacity={0.6} />}
+              {effectiveYField1 && <ReRadar name={chartConfigObj[effectiveYField1]?.label as string || finalYLabel1} dataKey={effectiveYField1} stroke={`var(--color-${effectiveYField1})`} fill={`var(--color-${effectiveYField1})`} fillOpacity={0.6} />}
+              {effectiveYField2 && effectiveYField2 !== effectiveYField1 && <ReRadar name={chartConfigObj[effectiveYField2]?.label as string || finalYLabel2} dataKey={effectiveYField2} stroke={`var(--color-${effectiveYField2})`} fill={`var(--color-${effectiveYField2})`} fillOpacity={0.6} />}
               <ChartLegend content={<ChartLegendContent />} />
             </ReRadarChart>
           </ResponsiveContainer>
@@ -379,18 +449,26 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
     const fieldsToExport: string[] = [];
     const headerLabels: string[] = [];
+    
+    const effectiveYField1 = yAxisField1 || (agg1 === 'count' ? 'count' : undefined);
+    const effectiveYField2 = yAxisField2 || (agg2 === 'count' ? 'count2' : undefined);
+
 
     if(xAxisField) {
         fieldsToExport.push(xAxisField);
         headerLabels.push(xAxisField.replace(/_/g, ' '));
     }
-    if(yAxisField1) {
-        fieldsToExport.push(yAxisField1);
-        headerLabels.push(`${yAxisField1.replace(/_/g, ' ')}${agg1 ? ` (${aggregationOptions.find(a=>a.value === agg1)?.label || agg1})` : ''}`);
+    if(effectiveYField1) {
+        fieldsToExport.push(effectiveYField1);
+        const baseLabel = yAxisField1 ? yAxisField1.replace(/_/g, ' ') : (agg1 === 'count' ? 'Count' : '');
+        const aggLabel = aggregationOptions.find(a => a.value === agg1)?.label || agg1;
+        headerLabels.push(`${baseLabel}${agg1 !== 'count' || yAxisField1 ? ` (${aggLabel})` : ''}`);
     }
-    if(yAxisField2 && yAxisField2 !== yAxisField1) {
-        fieldsToExport.push(yAxisField2);
-        headerLabels.push(`${yAxisField2.replace(/_/g, ' ')}${agg2 ? ` (${aggregationOptions.find(a=>a.value === agg2)?.label || agg2})` : ''}`);
+    if(effectiveYField2 && effectiveYField2 !== effectiveYField1) {
+        fieldsToExport.push(effectiveYField2);
+        const baseLabel = yAxisField2 ? yAxisField2.replace(/_/g, ' ') : (agg2 === 'count' ? 'Count' : '');
+        const aggLabel = aggregationOptions.find(a => a.value === agg2)?.label || agg2;
+        headerLabels.push(`${baseLabel}${agg2 !== 'count' || yAxisField2 ? ` (${aggLabel})` : ''}`);
     }
     
     const headerRow = headerLabels.join(',');
@@ -398,9 +476,9 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
       fieldsToExport.map(field => {
         let value = row[field];
         if (value instanceof Date) {
-             value = value.toISOString().split('T')[0]; // Format date as YYYY-MM-DD
+             value = value.toISOString().split('T')[0]; 
         } else if (typeof value === 'string' && value.includes(',')) {
-          return `"${value}"`;
+          return `"${value.replace(/"/g, '""')}"`;
         } else if (value === null || value === undefined) {
           return "";
         }
@@ -431,14 +509,22 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
     chartTheme: ChartThemeKey, setChartTheme: (val: ChartThemeKey) => void
   ) => {
     const xAxisOptions = getXAxisOptions(chartType);
-    const isY2Disabled = chartType === 'pie';
+    const isY2Disabled = chartType === 'pie'; // For pie, Y2 doesn't make sense. Scatter requires Y2.
+    const y1IsOptional = chartType === 'pie' && yAxisAggregation1 === 'count'; // Y1 field is optional if just counting categories for pie
 
-    const handleAggregationChange = (fieldSetter: (val: string | undefined) => void, aggSetter: (val: AggregationType) => void, newAgg: AggregationType, currentField: string | undefined) => {
+
+    const handleAggregationChange = (
+        fieldSetter: (val: string | undefined) => void, 
+        aggSetter: (val: AggregationType) => void, 
+        newAgg: AggregationType, 
+        currentField: string | undefined,
+        isY1: boolean // to know if we are dealing with Y1 or Y2
+    ) => {
       const isNumericOnlyAgg = aggregationOptions.find(opt => opt.value === newAgg)?.numericOnly;
       if (isNumericOnlyAgg && currentField && !numericFields.includes(currentField)) {
         toast({
           title: "Invalid Aggregation",
-          description: `Aggregation '${newAgg}' requires a numeric field. '${currentField}' is not consistently numeric. Select a numeric field or a non-numeric aggregation.`,
+          description: `Aggregation '${aggregationOptions.find(opt => opt.value === newAgg)?.label}' requires a numeric field. '${currentField}' is not consistently numeric. Select a numeric field or a non-numeric aggregation.`,
           variant: "destructive",
           duration: 7000,
         });
@@ -450,15 +536,20 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
       }
     };
     
-    const handleYFieldChange = (fieldSetter: (val: string | undefined) => void, aggSetter: (val: AggregationType) => void, newField: string | undefined, currentAgg: AggregationType) => {
+    const handleYFieldChange = (
+        fieldSetter: (val: string | undefined) => void, 
+        aggSetter: (val: AggregationType) => void, 
+        newField: string | undefined, 
+        currentAgg: AggregationType,
+        isY1: boolean
+    ) => {
         fieldSetter(newField);
         const isNumericOnlyAgg = aggregationOptions.find(opt => opt.value === currentAgg)?.numericOnly;
         if (isNumericOnlyAgg && newField && !numericFields.includes(newField)) {
-            // If current agg is numeric-only and new field is not numeric, switch agg to 'count'
             aggSetter('count');
             toast({
                 title: "Aggregation Switched",
-                description: `Field '${newField}' is not numeric. Switched aggregation to 'Count'.`,
+                description: `Field '${newField}' is not numeric. Switched aggregation for Y-Axis ${isY1 ? '1' : '2'} to 'Count (Non-Empty)'.`,
                 variant: "default",
                 duration: 5000,
             });
@@ -520,16 +611,17 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
            <div className="space-y-1">
-            <label className="text-sm font-medium text-muted-foreground">Y-Axis 1 Field</label>
+            <label className="text-sm font-medium text-muted-foreground">Y-Axis 1 Field {y1IsOptional ? '(Optional for Count)' : ''}</label>
             <Select 
-                value={yAxisField1} 
-                onValueChange={(val) => handleYFieldChange(setYAxisField1, setYAxisAggregation1, val, yAxisAggregation1)}
+                value={yAxisField1 || NO_FIELD_SELECTED_VALUE}
+                onValueChange={(val) => handleYFieldChange(setYAxisField1, setYAxisAggregation1, val === NO_FIELD_SELECTED_VALUE ? undefined : val, yAxisAggregation1, true)}
                 disabled={dataFields.length === 0}
             >
               <SelectTrigger className="w-full bg-input focus:bg-background">
                 <SelectValue placeholder="Select Y-Axis 1 Field" />
               </SelectTrigger>
               <SelectContent className="max-h-60">
+                 {y1IsOptional && <SelectItem value={NO_FIELD_SELECTED_VALUE}>None (Use X-Axis Count)</SelectItem>}
                 {dataFields.map(f => <SelectItem key={f} value={f} className="capitalize">{f.replace(/_/g, ' ')}</SelectItem>)}
                 {dataFields.length === 0 && <p className="p-2 text-xs text-muted-foreground text-center">No fields available</p>}
               </SelectContent>
@@ -537,15 +629,16 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             <label className="text-xs font-medium text-muted-foreground mt-1 block">Y-Axis 1 Aggregation</label>
             <Select 
                 value={yAxisAggregation1} 
-                onValueChange={(val: AggregationType) => handleAggregationChange(setYAxisField1, setYAxisAggregation1, val, yAxisField1)} 
-                disabled={!yAxisField1}
+                onValueChange={(val: AggregationType) => handleAggregationChange(setYAxisField1, setYAxisAggregation1, val, yAxisField1, true)} 
+                disabled={!yAxisField1 && !y1IsOptional}
             >
               <SelectTrigger className="w-full bg-input focus:bg-background text-xs h-8">
                 <SelectValue placeholder="Aggregation" />
               </SelectTrigger>
               <SelectContent>
                 {aggregationOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value} className="text-xs" disabled={opt.numericOnly && yAxisField1 && !numericFields.includes(yAxisField1)}>
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs" 
+                    disabled={opt.numericOnly && yAxisField1 && !numericFields.includes(yAxisField1) && !(y1IsOptional && opt.value === 'count')}>
                     {opt.label} {opt.numericOnly && yAxisField1 && !numericFields.includes(yAxisField1) ? "(N)" : ""}
                   </SelectItem>
                 ))}
@@ -557,7 +650,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             <label className="text-sm font-medium text-muted-foreground">Y-Axis 2 Field (Optional)</label>
             <Select
                 value={yAxisField2 || NO_FIELD_SELECTED_VALUE}
-                onValueChange={(val) => handleYFieldChange(setYAxisField2, setYAxisAggregation2, val === NO_FIELD_SELECTED_VALUE ? undefined : val, yAxisAggregation2)}
+                onValueChange={(val) => handleYFieldChange(setYAxisField2, setYAxisAggregation2, val === NO_FIELD_SELECTED_VALUE ? undefined : val, yAxisAggregation2, false)}
                 disabled={isY2Disabled || dataFields.filter(f => f !== yAxisField1).length === 0}
             >
               <SelectTrigger className="w-full bg-input focus:bg-background">
@@ -572,7 +665,7 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
              <label className="text-xs font-medium text-muted-foreground mt-1 block">Y-Axis 2 Aggregation</label>
             <Select 
                 value={yAxisAggregation2} 
-                onValueChange={(val: AggregationType) => handleAggregationChange(setYAxisField2, setYAxisAggregation2, val, yAxisField2)} 
+                onValueChange={(val: AggregationType) => handleAggregationChange(setYAxisField2, setYAxisAggregation2, val, yAxisField2, false)} 
                 disabled={!yAxisField2 || isY2Disabled}
             >
               <SelectTrigger className="w-full bg-input focus:bg-background text-xs h-8">
@@ -580,7 +673,8 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
               </SelectTrigger>
               <SelectContent>
                 {aggregationOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value} className="text-xs" disabled={opt.numericOnly && yAxisField2 && !numericFields.includes(yAxisField2)}>
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs" 
+                    disabled={opt.numericOnly && yAxisField2 && !numericFields.includes(yAxisField2)}>
                     {opt.label} {opt.numericOnly && yAxisField2 && !numericFields.includes(yAxisField2) ? "(N)" : ""}
                   </SelectItem>
                 ))}
@@ -623,19 +717,19 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             <Button
                 onClick={() => handleExport(displayDataChart1, chart1XAxisField, chart1YAxisField1, chart1YAxisField2, 1, chart1YAxisAggregation1, chart1YAxisAggregation2)}
                 className="bg-accent hover:bg-accent/90 text-accent-foreground"
-                disabled={!canVisualize || displayDataChart1.length === 0 || !chart1XAxisField || !chart1YAxisField1}
+                disabled={!canVisualize || displayDataChart1.length === 0 || !chart1XAxisField || (!chart1YAxisField1 && chart1YAxisAggregation1 !== 'count')}
             >
                 <FileSpreadsheet className="mr-2 h-4 w-4" /> Export Chart 1 Data
             </Button>
           </div>
-          {renderConfigControls(
+          {canVisualize && renderConfigControls(
             '1', chart1Type, setChart1Type, chart1XAxisField, setChart1XAxisField,
             chart1YAxisField1, setChart1YAxisField1, chart1YAxisAggregation1, setChart1YAxisAggregation1,
             chart1YAxisField2, setChart1YAxisField2, chart1YAxisAggregation2, setChart1YAxisAggregation2,
             chart1Theme, setChart1Theme
           )}
           <ChartContainer config={chart1Config} className="h-[450px] w-full mt-6">
-            {renderChartContent(chart1Type, displayDataChart1, chart1XAxisField, chart1YAxisField1, chart1YAxisField2, chart1Config, chart1YAxisAggregation1, chart1YAxisAggregation2)}
+            {renderChartContent(chart1Type, displayDataChart1, chart1XAxisField, chart1YAxisField1, chart1YAxisField2, chart1Config, chart1YAxisAggregation1, chart1YAxisAggregation2, 1)}
           </ChartContainer>
         </section>
 
@@ -648,19 +742,19 @@ export function DataVisualization({ uploadedData, dataFields, currentDatasetIden
             <Button
                 onClick={() => handleExport(displayDataChart2, chart2XAxisField, chart2YAxisField1, chart2YAxisField2, 2, chart2YAxisAggregation1, chart2YAxisAggregation2)}
                 className="bg-accent hover:bg-accent/90 text-accent-foreground"
-                disabled={!canVisualize || displayDataChart2.length === 0 || !chart2XAxisField || !chart2YAxisField1}
+                disabled={!canVisualize || displayDataChart2.length === 0 || !chart2XAxisField || (!chart2YAxisField1 && chart2YAxisAggregation1 !== 'count')}
             >
                 <FileSpreadsheet className="mr-2 h-4 w-4" /> Export Chart 2 Data
             </Button>
           </div>
-           {renderConfigControls(
+           {canVisualize && renderConfigControls(
             '2', chart2Type, setChart2Type, chart2XAxisField, setChart2XAxisField,
             chart2YAxisField1, setChart2YAxisField1, chart2YAxisAggregation1, setChart2YAxisAggregation1,
             chart2YAxisField2, setChart2YAxisField2, chart2YAxisAggregation2, setChart2YAxisAggregation2,
             chart2Theme, setChart2Theme
           )}
           <ChartContainer config={chart2Config} className="h-[450px] w-full mt-6">
-            {renderChartContent(chart2Type, displayDataChart2, chart2XAxisField, chart2YAxisField1, chart2YAxisField2, chart2Config, chart2YAxisAggregation1, chart2YAxisAggregation2)}
+            {renderChartContent(chart2Type, displayDataChart2, chart2XAxisField, chart2YAxisField1, chart2YAxisField2, chart2Config, chart2YAxisAggregation1, chart2YAxisAggregation2, 2)}
           </ChartContainer>
         </section>
 
