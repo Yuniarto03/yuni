@@ -6,7 +6,7 @@ import { LayoutGrid, Rows, Columns, Sigma, FileSpreadsheet, ChevronDown, PlusCir
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { TableHeader, TableBody, TableCell, TableHead, TableRow, TableCaption } from "@/components/ui/table";
+import { TableHeader, TableBody, TableCell, TableHead, TableRow, TableCaption, TableFooter as ShadTableFooter } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
@@ -42,55 +42,111 @@ interface ValueFieldConfig {
 
 interface AggregationState {
   sum: number;
-  sumOfSquares: number;
-  countNumeric: number;
-  countTotal: number;
-  uniqueValues: Set<any>;
+  sumOfSquares: number; // For standard deviation
+  countNumeric: number; // Count of numeric values for average, sdev
+  countTotal: number; // Total count of items (numeric or not) for 'count' aggregation
+  uniqueValues: Set<any>; // For unique count
   min: number;
   max: number;
 }
 
-function calculateSdev(sum: number, sumOfSquares: number, countNumeric: number): number {
-  if (countNumeric < 2) return 0;
-  const variance = (sumOfSquares - (sum * sum) / countNumeric) / (countNumeric - 1);
-  return Math.sqrt(Math.max(0, variance));
+// Helper function to initialize an AggregationState
+function createInitialAggregationState(): AggregationState {
+  return { sum: 0, sumOfSquares: 0, countNumeric: 0, countTotal: 0, uniqueValues: new Set(), min: Infinity, max: -Infinity };
 }
 
+// Helper function to update an AggregationState with a new value
+function updateAggregationState(state: AggregationState, originalValue: any): AggregationState {
+  state.countTotal++;
+  state.uniqueValues.add(originalValue);
+
+  let numValue = NaN;
+  if (typeof originalValue === 'number') {
+    numValue = originalValue;
+  } else if (typeof originalValue === 'string') {
+    const parsed = parseFloat(originalValue.replace(/,/g, ''));
+    if (!isNaN(parsed)) numValue = parsed;
+  }
+
+  if (!isNaN(numValue)) {
+    state.sum += numValue;
+    state.sumOfSquares += numValue * numValue;
+    state.countNumeric++;
+    state.min = Math.min(state.min, numValue);
+    state.max = Math.max(state.max, numValue);
+  }
+  return state;
+}
+
+// Helper to merge two aggregation states (useful for grand totals)
+function mergeAggregationStates(stateA: AggregationState, stateB: AggregationState): AggregationState {
+    const mergedState = createInitialAggregationState();
+    mergedState.sum = stateA.sum + stateB.sum;
+    mergedState.sumOfSquares = stateA.sumOfSquares + stateB.sumOfSquares;
+    mergedState.countNumeric = stateA.countNumeric + stateB.countNumeric;
+    mergedState.countTotal = stateA.countTotal + stateB.countTotal; // Assuming simple sum for count for now
+    // For unique values, min, max, this is more complex if merging pre-aggregated states.
+    // For true accuracy, unique/min/max totals would need re-aggregation from raw data or careful handling.
+    // This simple merge is okay for sum, count, average.
+    // For uniqueValues, min, max, this simplified merge is a placeholder.
+    stateA.uniqueValues.forEach(val => mergedState.uniqueValues.add(val));
+    stateB.uniqueValues.forEach(val => mergedState.uniqueValues.add(val)); // This results in a union, might not be a "sum" of unique counts.
+    mergedState.min = Math.min(stateA.min, stateB.min);
+    mergedState.max = Math.max(stateA.max, stateB.max);
+    return mergedState;
+}
+
+
+// Helper function to calculate final value based on aggregation type
+function calculateFinalValue(state: AggregationState, aggregation: AggregationType): number | string {
+  switch (aggregation) {
+    case 'sum': return state.sum;
+    case 'count': return state.countTotal;
+    case 'average': return state.countNumeric > 0 ? state.sum / state.countNumeric : 0;
+    case 'min': return state.min === Infinity ? 0 : state.min;
+    case 'max': return state.max === -Infinity ? 0 : state.max;
+    case 'uniqueCount': return state.uniqueValues.size;
+    case 'sdev':
+      if (state.countNumeric < 2) return 0;
+      const variance = (state.sumOfSquares - (state.sum * state.sum) / state.countNumeric) / (state.countNumeric - 1);
+      return Math.sqrt(Math.max(0, variance)); // max(0, variance) to handle potential floating point issues
+    default: return state.sum;
+  }
+}
+
+
 const MAX_ROW_FIELDS = 2;
-const MAX_COL_FIELDS = 1;
+const MAX_COL_FIELDS = 1; // Keeping this to 1 simplifies column header complexity significantly
 const MAX_VALUE_FIELDS = 3;
 
 
 export function DataSummarization({ uploadedData, dataFields }: DataSummarizationProps) {
   const [rowFields, setRowFields] = useState<string[]>([]);
-  const [columnFields, setColumnFields] = useState<string[]>([]);
+  const [columnFields, setColumnFields] = useState<string[]>([]); // Max 1 for now
   const [valueFieldConfigs, setValueFieldConfigs] = useState<ValueFieldConfig[]>([]);
   
   const [summaryData, setSummaryData] = useState<Record<string, any>[]>([]);
-  const [dynamicColumnHeaders, setDynamicColumnHeaders] = useState<string[]>([]);
+  const [dynamicColumnHeaders, setDynamicColumnHeaders] = useState<string[]>([]); // Combined headers for values and row grand totals
   const [effectiveColumnFieldValues, setEffectiveColumnFieldValues] = useState<string[]>([]);
+  const [grandTotalRow, setGrandTotalRow] = useState<Record<string, any> | null>(null);
   
   const [contentFilters, setContentFilters] = useState<Record<string, Set<string>>>({});
   const [uniqueValuesForFilterUI, setUniqueValuesForFilterUI] = useState<Record<string, { value: string; count: number }[]>>({});
   const [showFilters, setShowFilters] = useState(false);
 
-
   const { toast } = useToast();
 
   useEffect(() => {
-    // Reset pivot config when data source changes
     setRowFields([]);
     setColumnFields([]);
     setValueFieldConfigs([]);
     setSummaryData([]);
     setDynamicColumnHeaders([]);
     setEffectiveColumnFieldValues([]);
+    setGrandTotalRow(null);
     
-    // Reset content filters and unique values for filter UI
     const initialContentFilters: Record<string, Set<string>> = {};
-    dataFields.forEach(key => {
-      initialContentFilters[key] = new Set();
-    });
+    dataFields.forEach(key => initialContentFilters[key] = new Set());
     setContentFilters(initialContentFilters);
 
     if (uploadedData.length > 0) {
@@ -110,12 +166,10 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     } else {
       setUniqueValuesForFilterUI({});
     }
-
   }, [uploadedData, dataFields]);
 
   const dataForPivot = useMemo(() => {
     if (uploadedData.length === 0) return [];
-    
     const activeFilterKeys = Object.keys(contentFilters).filter(key => contentFilters[key].size > 0);
     if (activeFilterKeys.length === 0) return uploadedData;
 
@@ -130,20 +184,27 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
   }, [uploadedData, contentFilters]);
   
   useEffect(() => {
-    if (dataForPivot.length === 0 || rowFields.length === 0 || valueFieldConfigs.length === 0) {
+    if (dataForPivot.length === 0 || valueFieldConfigs.length === 0) {
       setSummaryData([]);
       setDynamicColumnHeaders([]);
       setEffectiveColumnFieldValues([]);
+      setGrandTotalRow(null);
       return;
     }
 
+    // groupedData: Map<RowKey, Map<ColKey, AggregationState[]>>
     const groupedData = new Map<string, Map<string, AggregationState[]>>();
     const uniqueColFieldValues = new Set<string>();
+    // rowGrandTotalsMap: Map<RowKey, AggregationState[]> (for grand total across columns for each row)
+    const rowGrandTotalsMap = new Map<string, AggregationState[]>();
+    // overallGrandTotalsAggStates: Map<HeaderKey, AggregationState> (for footer grand total line)
+    const overallGrandTotalsAggStates = new Map<string, AggregationState>();
+
 
     dataForPivot.forEach(item => {
       const rowKey = rowFields.map(rf => String(item[rf] ?? '')).join('||');
       
-      let colKeyValue = "_TOTAL_";
+      let colKeyValue = "_TOTAL_"; // Default if no columnFields
       if (columnFields.length > 0 && columnFields[0]) {
         colKeyValue = String(item[columnFields[0]] ?? '');
         uniqueColFieldValues.add(colKeyValue);
@@ -151,58 +212,60 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
 
       if (!groupedData.has(rowKey)) {
         groupedData.set(rowKey, new Map<string, AggregationState[]>());
+        rowGrandTotalsMap.set(rowKey, valueFieldConfigs.map(() => createInitialAggregationState()));
       }
       const rowGroup = groupedData.get(rowKey)!;
+      const currentRowGrandTotalStates = rowGrandTotalsMap.get(rowKey)!;
 
       if (!rowGroup.has(colKeyValue)) {
-        rowGroup.set(colKeyValue, valueFieldConfigs.map(() => ({
-          sum: 0, sumOfSquares: 0, countNumeric: 0, countTotal: 0,
-          uniqueValues: new Set(), min: Infinity, max: -Infinity,
-        })));
+        rowGroup.set(colKeyValue, valueFieldConfigs.map(() => createInitialAggregationState()));
       }
-      const aggStates = rowGroup.get(colKeyValue)!;
+      const aggStatesForCell = rowGroup.get(colKeyValue)!;
 
-      valueFieldConfigs.forEach((vfConfig, index) => {
-        const state = aggStates[index];
+      valueFieldConfigs.forEach((vfConfig, vfIndex) => {
         const originalValue = item[vfConfig.field];
-        
-        let numValue = NaN;
-        if (typeof originalValue === 'number') {
-            numValue = originalValue;
-        } else if (typeof originalValue === 'string') {
-            const parsed = parseFloat(originalValue.replace(/,/g, '')); // Handle numbers with commas
-            if (!isNaN(parsed)) numValue = parsed;
-        }
-
-        state.countTotal++;
-        state.uniqueValues.add(originalValue);
-
-        if (!isNaN(numValue)) {
-          state.sum += numValue;
-          state.sumOfSquares += numValue * numValue;
-          state.countNumeric++;
-          state.min = Math.min(state.min, numValue);
-          state.max = Math.max(state.max, numValue);
-        }
+        updateAggregationState(aggStatesForCell[vfIndex], originalValue);
+        updateAggregationState(currentRowGrandTotalStates[vfIndex], originalValue); // Update row grand total state
       });
     });
 
     const sortedUniqueColFieldValues = Array.from(uniqueColFieldValues).sort();
-    setEffectiveColumnFieldValues(columnFields.length > 0 && columnFields[0] ? sortedUniqueColFieldValues : ["_TOTAL_"]);
+    const currentEffectiveColumnFieldValues = columnFields.length > 0 && columnFields[0] ? sortedUniqueColFieldValues : ["_TOTAL_"];
+    setEffectiveColumnFieldValues(currentEffectiveColumnFieldValues);
 
     const newSummaryData: Record<string, any>[] = [];
-    const newDynamicColumnHeaders: string[] = [];
+    
+    // Determine actual column value keys to iterate for headers and data (could be ["_TOTAL_"] or actual values)
+    const targetColFieldValues = currentEffectiveColumnFieldValues.length > 0 ? currentEffectiveColumnFieldValues : ["_TOTAL_"];
 
-    const targetColFieldValues = columnFields.length > 0 && columnFields[0] ? sortedUniqueColFieldValues : ["_TOTAL_"];
-
+    // Define all column headers: for each col value + value field, then for each row grand total value field
+    const valueColumnHeaders: string[] = [];
     targetColFieldValues.forEach(colVal => {
         valueFieldConfigs.forEach(vfConfig => {
             const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-            const headerText = targetColFieldValues[0] === "_TOTAL_" ? `${vfConfig.field} (${aggInfo})` : `${colVal} - ${vfConfig.field} (${aggInfo})`;
-            newDynamicColumnHeaders.push(headerText);
+            const headerText = targetColFieldValues[0] === "_TOTAL_" && targetColFieldValues.length === 1 
+                               ? `${vfConfig.field} (${aggInfo})` 
+                               : `${colVal} - ${vfConfig.field} (${aggInfo})`;
+            valueColumnHeaders.push(headerText);
+            if (!overallGrandTotalsAggStates.has(headerText)) {
+                overallGrandTotalsAggStates.set(headerText, createInitialAggregationState());
+            }
         });
     });
-    setDynamicColumnHeaders(newDynamicColumnHeaders);
+    
+    const shouldShowRowGrandTotals = columnFields.length > 0 && valueFieldConfigs.length > 0;
+    const grandTotalRowColumnHeaders: string[] = [];
+    if (shouldShowRowGrandTotals) {
+        valueFieldConfigs.forEach(vfConfig => {
+            const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
+            const headerText = `Grand Total - ${vfConfig.field} (${aggInfo})`;
+            grandTotalRowColumnHeaders.push(headerText);
+            if (!overallGrandTotalsAggStates.has(headerText)) {
+                overallGrandTotalsAggStates.set(headerText, createInitialAggregationState());
+            }
+        });
+    }
+    setDynamicColumnHeaders([...valueColumnHeaders, ...grandTotalRowColumnHeaders]);
     
     groupedData.forEach((colGroups, rowKey) => {
       const summaryRow: Record<string, any> = {};
@@ -210,28 +273,40 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       rowFields.forEach((rf, idx) => summaryRow[rf] = rowKeyParts[idx]);
 
       targetColFieldValues.forEach(colVal => {
-        const aggStates = colGroups.get(colVal);
-        valueFieldConfigs.forEach((vfConfig, index) => {
-          let aggregatedValue: number | string = 0;
-          if (aggStates && aggStates[index]) {
-            const state = aggStates[index];
-            switch (vfConfig.aggregation) {
-              case 'sum': aggregatedValue = state.sum; break;
-              case 'count': aggregatedValue = state.countTotal; break;
-              case 'average': aggregatedValue = state.countNumeric > 0 ? state.sum / state.countNumeric : 0; break;
-              case 'min': aggregatedValue = state.min === Infinity ? 0 : state.min; break;
-              case 'max': aggregatedValue = state.max === -Infinity ? 0 : state.max; break;
-              case 'uniqueCount': aggregatedValue = state.uniqueValues.size; break;
-              case 'sdev': aggregatedValue = calculateSdev(state.sum, state.sumOfSquares, state.countNumeric); break;
-              default: aggregatedValue = state.sum;
-            }
-          }
-          
+        const aggStatesForCell = colGroups.get(colVal);
+        valueFieldConfigs.forEach((vfConfig, vfIndex) => {
           const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-          const headerKey = targetColFieldValues[0] === "_TOTAL_" ? `${vfConfig.field} (${aggInfo})` : `${colVal} - ${vfConfig.field} (${aggInfo})`;
-          summaryRow[headerKey] = aggregatedValue;
+          const headerKey = targetColFieldValues[0] === "_TOTAL_" && targetColFieldValues.length === 1
+                            ? `${vfConfig.field} (${aggInfo})`
+                            : `${colVal} - ${vfConfig.field} (${aggInfo})`;
+          
+          let finalValue = 0; // Default if no data for cell
+          if (aggStatesForCell && aggStatesForCell[vfIndex]) {
+            finalValue = calculateFinalValue(aggStatesForCell[vfIndex], vfConfig.aggregation);
+            // Update overall grand total for this specific column header
+            const overallState = overallGrandTotalsAggStates.get(headerKey)!;
+            // This direct update assumes the values being summed are appropriate (e.g. sums of sums).
+            // For more complex aggregations (avg, min, max, sdev, unique), merging states or re-aggregating is better.
+            // For simplicity here, we'll update based on the cell's final value, which is okay for sum/count.
+            // A more robust way: merge aggStatesForCell[vfIndex] into overallState.
+            // This part is tricky for non-additive aggregations like average or sdev.
+            // We are merging the states instead of values for better accuracy
+            overallGrandTotalsAggStates.set(headerKey, mergeAggregationStates(overallState, aggStatesForCell[vfIndex]));
+
+          }
+          summaryRow[headerKey] = finalValue;
         });
       });
+
+      if (shouldShowRowGrandTotals) {
+        const currentRowGrandTotalStates = rowGrandTotalsMap.get(rowKey)!;
+        grandTotalRowColumnHeaders.forEach((gtHeaderKey, vfIndex) => {
+            summaryRow[gtHeaderKey] = calculateFinalValue(currentRowGrandTotalStates[vfIndex], valueFieldConfigs[vfIndex].aggregation);
+            // Update overall grand total for this row grand total header
+             const overallState = overallGrandTotalsAggStates.get(gtHeaderKey)!;
+             overallGrandTotalsAggStates.set(gtHeaderKey, mergeAggregationStates(overallState, currentRowGrandTotalStates[vfIndex]));
+        });
+      }
       newSummaryData.push(summaryRow);
     });
     
@@ -242,8 +317,29 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       }
       return 0;
     });
+    setSummaryData(newSummaryData.slice(0, 100)); // Limit display for performance
 
-    setSummaryData(newSummaryData.slice(0, 100));
+    // Finalize overallGrandTotalsAggStates by calculating final values
+    const finalGrandTotalRow: Record<string, any> = {};
+    rowFields.forEach((rf, idx) => finalGrandTotalRow[rf] = idx === 0 ? "Grand Total" : "");
+    
+    [...valueColumnHeaders, ...grandTotalRowColumnHeaders].forEach(headerKey => {
+        const state = overallGrandTotalsAggStates.get(headerKey);
+        if(state) {
+            // Need to find the correct aggregation type for this headerKey
+            let aggregationType: AggregationType | undefined;
+            const matchingVfConfig = valueFieldConfigs.find(vf => {
+                const aggInfo = aggregationOptions.find(opt => opt.value === vf.aggregation)?.label || vf.aggregation;
+                return headerKey.includes(vf.field) && headerKey.includes(aggInfo);
+            });
+            if(matchingVfConfig) aggregationType = matchingVfConfig.aggregation;
+
+            finalGrandTotalRow[headerKey] = aggregationType ? calculateFinalValue(state, aggregationType) : 0;
+        } else {
+            finalGrandTotalRow[headerKey] = 0;
+        }
+    });
+    setGrandTotalRow(finalGrandTotalRow);
 
   }, [dataForPivot, rowFields, columnFields, valueFieldConfigs]);
 
@@ -311,7 +407,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         const sampleValue = dataForPivot[0]?.[vf.field];
         if (aggOption.numericOnly && typeof sampleValue !== 'number' && (typeof sampleValue !== 'string' || isNaN(parseFloat(String(sampleValue).replace(/,/g, ''))))) {
           toast({title: "Invalid Aggregation", description: `Aggregation '${aggOption.label}' requires a numeric field. '${vf.field}' is not numeric.`, variant: "destructive", duration: 5000});
-          return vf;
+          return vf; // Don't change if invalid
         }
         return { ...vf, aggregation: newAggregation };
       }
@@ -326,7 +422,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     }
     toast({ title: "Exporting Summary", description: "Summary table export to CSV started..." });
     
-    const headers = [...rowFields, ...dynamicColumnHeaders];
+    const headers = [...rowFields, ...dynamicColumnHeaders]; // dynamicColumnHeaders includes value and row grand total headers
     const csvHeaderRow = headers.map(h => `"${String(h ?? '').replace(/_/g, ' ').replace(/"/g, '""')}"`).join(',');
 
     const dataRows = summaryData.map(row => {
@@ -335,19 +431,38 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         if (cellValue === null || cellValue === undefined) {
             cellValue = "";
         } else if (typeof cellValue === 'number') {
-            cellValue = cellValue.toString();
+            cellValue = cellValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}).replace(/,/g, ''); // Use dot as decimal, remove thousands for CSV
         } else {
             cellValue = String(cellValue);
         }
         
-        if (cellValue.includes(',')) {
+        if (cellValue.includes(',')) { // If it still contains comma (e.g. was string originally)
           return `"${cellValue.replace(/"/g, '""')}"`;
         }
         return cellValue;
       }).join(',');
     });
+
+    let csvContent = csvHeaderRow + '\n' + dataRows.join('\n');
+
+    if (grandTotalRow) {
+      const footerRowCsv = headers.map(header => {
+        let cellValue = grandTotalRow[header];
+         if (cellValue === null || cellValue === undefined) {
+            cellValue = "";
+        } else if (typeof cellValue === 'number') {
+            cellValue = cellValue.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2}).replace(/,/g, '');
+        } else {
+            cellValue = String(cellValue);
+        }
+        if (cellValue.includes(',')) {
+          return `"${cellValue.replace(/"/g, '""')}"`;
+        }
+        return cellValue;
+      }).join(',');
+      csvContent += '\n' + footerRowCsv;
+    }
     
-    const csvContent = [csvHeaderRow, ...dataRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
     link.setAttribute("href", URL.createObjectURL(blob));
@@ -389,7 +504,6 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
   };
 
   const activeFilterCount = Object.values(contentFilters).reduce((acc, columnSet) => acc + (columnSet.size > 0 ? 1 : 0), 0);
-  const availableFieldsForPivot = dataFields.filter(f => !rowFields.includes(f) && !columnFields.includes(f) && !valueFieldConfigs.some(vf => vf.field === f));
 
 
   if (uploadedData.length === 0) {
@@ -420,7 +534,6 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       </CardHeader>
       <CardContent className="space-y-6">
         
-        {/* Pre-Aggregation Filters Section */}
         <Card className="bg-background/30">
           <CardHeader className="p-4">
             <div className="flex justify-between items-center">
@@ -482,7 +595,6 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         
         <Separator />
 
-        {/* Pivot Configuration Section */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           <Card className="md:col-span-1 bg-background/50 max-h-96">
             <CardHeader className="pb-2">
@@ -617,14 +729,39 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
                   ))}
                 </TableRow>
               ))}
-              {summaryData.length === 0 && (
+              {summaryData.length === 0 && valueFieldConfigs.length > 0 && (
                 <TableRow>
                   <TableCell colSpan={rowFields.length + dynamicColumnHeaders.length || 1} className="h-24 text-center text-muted-foreground">
                     { (dataForPivot.length > 0 && rowFields.length > 0 && valueFieldConfigs.length > 0) ? "No summary data for current configuration/filters." : "Please select Row and Value fields, and adjust filters if needed."}
                   </TableCell>
                 </TableRow>
               )}
+               {valueFieldConfigs.length === 0 && (
+                 <TableRow>
+                  <TableCell colSpan={rowFields.length + 1} className="h-24 text-center text-muted-foreground">
+                    Please add at least one field to the 'Values' area to generate a summary.
+                  </TableCell>
+                </TableRow>
+               )}
             </TableBody>
+            {summaryData.length > 0 && valueFieldConfigs.length > 0 && grandTotalRow && (
+                <ShadTableFooter className="sticky bottom-0 bg-card/95 backdrop-blur-sm z-10">
+                    <TableRow className="hover:bg-muted/20 font-semibold">
+                        {rowFields.map((rf, idx) => (
+                            <TableCell key={`footer-${rf}`} className="capitalize whitespace-nowrap">
+                                {idx === 0 ? grandTotalRow[rf] : ""}
+                            </TableCell>
+                        ))}
+                        {dynamicColumnHeaders.map(dh => (
+                             <TableCell key={`footer-${dh}`} className="text-right whitespace-nowrap">
+                                {typeof grandTotalRow[dh] === 'number'
+                                ? Number(grandTotalRow[dh]).toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2})
+                                : String(grandTotalRow[dh] ?? '')}
+                            </TableCell>
+                        ))}
+                    </TableRow>
+                </ShadTableFooter>
+            )}
           </table>
         </div>
         <CardFooter className="mt-6 flex justify-end p-0">
@@ -636,5 +773,3 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     </Card>
   );
 }
-
-    
