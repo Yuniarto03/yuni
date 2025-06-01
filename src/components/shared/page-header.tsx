@@ -1,3 +1,4 @@
+
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -13,7 +14,7 @@ export function PageHeader({ title, description, icon: Icon, className }: PageHe
     <div className={cn("mb-8", className)}>
       <div className="flex items-center gap-3 mb-1">
         {Icon && <Icon className="h-8 w-8 text-primary" />}
-        <h1 className="font-headline text-3xl md:text-4xl font-bold text-primary-foreground">{title}</h1>
+        <h1 className="font-headline text-3xl md:text-4xl font-bold text-primary">{title}</h1>
       </div>
       {description && <p className="text-lg text-muted-foreground">{description}</p>}
     </div>

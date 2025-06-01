@@ -150,7 +150,7 @@ export function AIInsights({ uploadedData, dataFields, datasetIdentifier }: AIIn
             <div className="space-y-6 p-4 border rounded-md bg-background/50 min-h-[200px] text-sm">
               {insights.narrativeSummary && (
                 <section>
-                  <h3 className="font-semibold text-lg text-primary-foreground mb-2 flex items-center gap-2">
+                  <h3 className="font-semibold text-lg text-primary mb-2 flex items-center gap-2">
                     <BookOpen className="text-primary h-5 w-5" /> Narrative Summary
                   </h3>
                   <p className="text-foreground/90 whitespace-pre-wrap">{insights.narrativeSummary}</p>
@@ -159,7 +159,7 @@ export function AIInsights({ uploadedData, dataFields, datasetIdentifier }: AIIn
 
               {insights.keyFindings && insights.keyFindings.length > 0 && (
                 <section>
-                  <h3 className="font-semibold text-lg text-primary-foreground mb-2 flex items-center gap-2">
+                  <h3 className="font-semibold text-lg text-accent mb-2 flex items-center gap-2">
                     <ListChecks className="text-accent h-5 w-5" /> Key Findings
                   </h3>
                   <ul className="list-disc list-inside pl-2 space-y-1 text-foreground/90">
@@ -172,7 +172,7 @@ export function AIInsights({ uploadedData, dataFields, datasetIdentifier }: AIIn
 
               {insights.rootCauseAnalysis && (
                 <section>
-                  <h3 className="font-semibold text-lg text-primary-foreground mb-2 flex items-center gap-2">
+                  <h3 className="font-semibold text-lg text-orange-500 mb-2 flex items-center gap-2">
                     <AlertTriangle className="text-orange-500 h-5 w-5" /> Root Cause Analysis
                   </h3>
                   <p className="text-foreground/90 whitespace-pre-wrap">{insights.rootCauseAnalysis}</p>
@@ -181,7 +181,7 @@ export function AIInsights({ uploadedData, dataFields, datasetIdentifier }: AIIn
 
               {insights.suggestedSolutions && insights.suggestedSolutions.length > 0 && (
                 <section>
-                  <h3 className="font-semibold text-lg text-primary-foreground mb-2 flex items-center gap-2">
+                  <h3 className="font-semibold text-lg text-green-500 mb-2 flex items-center gap-2">
                     <Wrench className="text-green-500 h-5 w-5" /> Suggested Solutions / Next Steps
                   </h3>
                   <ul className="list-disc list-inside pl-2 space-y-1 text-foreground/90">

@@ -296,7 +296,7 @@ export function ForecastAnalysis({ uploadedData, dataFields, datasetIdentifier }
 
         {!isLoading && forecastNarrative && (
           <div>
-            <h3 className="font-semibold mb-2 text-lg text-primary-foreground">Forecast Narrative:</h3>
+            <h3 className="font-semibold mb-2 text-lg text-primary">Forecast Narrative:</h3>
              <div className="p-4 border rounded-md bg-background/50 min-h-[100px] whitespace-pre-wrap text-sm text-foreground/90 max-h-[300px] overflow-y-auto">
                 {forecastNarrative}
              </div>

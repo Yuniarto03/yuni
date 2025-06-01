@@ -689,7 +689,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         
         <Separator />
         
-        <h3 className="font-headline text-xl text-primary-foreground">Summary Table</h3>
+        <h3 className="font-headline text-xl text-primary">Summary Table</h3>
         <div className="w-full overflow-x-auto rounded-md border max-h-[70vh]">
           <table className="min-w-max caption-bottom text-sm">
             <TableCaption>
