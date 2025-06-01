@@ -241,10 +241,9 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     const valueColumnHeaders: string[] = [];
     targetColFieldValues.forEach(colVal => {
         valueFieldConfigs.forEach(vfConfig => {
-            const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
             const headerText = targetColFieldValues[0] === "_TOTAL_" && targetColFieldValues.length === 1 
-                               ? `${vfConfig.field} (${aggInfo})` 
-                               : `${colVal} - ${vfConfig.field} (${aggInfo})`;
+                               ? `${vfConfig.field}` 
+                               : `${colVal} - ${vfConfig.field}`;
             valueColumnHeaders.push(headerText);
             if (!overallGrandTotalsAggStates.has(headerText)) {
                 overallGrandTotalsAggStates.set(headerText, createInitialAggregationState());
@@ -256,8 +255,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     const grandTotalRowColumnHeaders: string[] = [];
     if (shouldShowRowGrandTotals) {
         valueFieldConfigs.forEach(vfConfig => {
-            const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
-            const headerText = `Grand Total - ${vfConfig.field} (${aggInfo})`;
+            const headerText = `Grand Total - ${vfConfig.field}`;
             grandTotalRowColumnHeaders.push(headerText);
             if (!overallGrandTotalsAggStates.has(headerText)) {
                 overallGrandTotalsAggStates.set(headerText, createInitialAggregationState());
@@ -274,10 +272,9 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
       targetColFieldValues.forEach(colVal => {
         const aggStatesForCell = colGroups.get(colVal);
         valueFieldConfigs.forEach((vfConfig, vfIndex) => {
-          const aggInfo = aggregationOptions.find(opt => opt.value === vfConfig.aggregation)?.label || vfConfig.aggregation;
           const headerKey = targetColFieldValues[0] === "_TOTAL_" && targetColFieldValues.length === 1
-                            ? `${vfConfig.field} (${aggInfo})`
-                            : `${colVal} - ${vfConfig.field} (${aggInfo})`;
+                            ? `${vfConfig.field}`
+                            : `${colVal} - ${vfConfig.field}`;
           
           let finalValue: string | number = 0; 
           if (aggStatesForCell && aggStatesForCell[vfIndex]) {
@@ -317,8 +314,7 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
         if(state) {
             let aggregationType: AggregationType | undefined;
             const matchingVfConfig = valueFieldConfigs.find(vf => {
-                const aggInfo = aggregationOptions.find(opt => opt.value === vf.aggregation)?.label || vf.aggregation;
-                return headerKey.includes(vf.field) && headerKey.includes(aggInfo);
+                return headerKey.includes(vf.field); // Simpler check now
             });
             if(matchingVfConfig) aggregationType = matchingVfConfig.aggregation;
 
@@ -697,7 +693,17 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
             </TableCaption>
             <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow className="hover:bg-muted/20">
-                {rowFields.map(rf => <TableHead key={rf} className="capitalize whitespace-nowrap">{rf.replace(/_/g, ' ')}</TableHead>)}
+                {rowFields.map((rf, idx) => 
+                  <TableHead 
+                    key={rf} 
+                    className={cn(
+                      "capitalize whitespace-nowrap",
+                      idx === 0 && rowFields.length > 0 && "sticky left-0 z-[11] bg-card"
+                    )}
+                  >
+                    {rf.replace(/_/g, ' ')}
+                  </TableHead>
+                )}
                 {dynamicColumnHeaders.map(dh => (
                     <TableHead key={dh} className="text-right capitalize whitespace-nowrap">{String(dh ?? '').replace(/_/g, ' ')}</TableHead>
                 ))}
@@ -707,7 +713,17 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
             <TableBody>
               {summaryData.map((item, index) => (
                 <TableRow key={index} className="hover:bg-muted/10">
-                  {rowFields.map(rf => <TableCell key={`${rf}-${index}`} className="capitalize whitespace-nowrap">{String(item[rf] ?? '')}</TableCell>)}
+                  {rowFields.map((rf, idx) => 
+                    <TableCell 
+                      key={`${rf}-${index}`} 
+                      className={cn(
+                        "capitalize whitespace-nowrap",
+                        idx === 0 && rowFields.length > 0 && "sticky left-0 z-[1] bg-card" // Use bg-card for consistent appearance of frozen column
+                      )}
+                    >
+                      {String(item[rf] ?? '')}
+                    </TableCell>
+                  )}
                   {dynamicColumnHeaders.map(dh => (
                     <TableCell key={`${dh}-${index}`} className="text-right whitespace-nowrap">
                       {typeof item[dh] === 'number' 
@@ -736,7 +752,13 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
                 <ShadTableFooter className="sticky bottom-0 bg-card/95 backdrop-blur-sm z-10">
                     <TableRow className="hover:bg-muted/20 font-semibold">
                         {rowFields.map((rf, idx) => (
-                            <TableCell key={`footer-${rf}`} className="capitalize whitespace-nowrap">
+                            <TableCell 
+                              key={`footer-${rf}`} 
+                              className={cn(
+                                "capitalize whitespace-nowrap",
+                                idx === 0 && rowFields.length > 0 && "sticky left-0 z-[11] bg-card/95" // Match footer bg
+                              )}
+                            >
                                 {idx === 0 ? grandTotalRow[rf] : ""}
                             </TableCell>
                         ))}
@@ -761,3 +783,4 @@ export function DataSummarization({ uploadedData, dataFields }: DataSummarizatio
     </Card>
   );
 }
+
